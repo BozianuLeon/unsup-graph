@@ -122,7 +122,7 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
 
 
 if __name__=="__main__":
-    avg_num_nodes = 250
+    avg_num_nodes = 25
     k = 3
     #generate data and put into pytorch geometric dataloaders
     train_data_list = make_data_list(1000,avg_num_nodes,k)
@@ -148,5 +148,5 @@ if __name__=="__main__":
 
     ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Graph with KNN {k} Edges')
     plt.legend()
-    plt.show()
+    # plt.show()
     plt.savefig('../plots/synthetic-data-new-knn.png')
