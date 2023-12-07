@@ -149,4 +149,4 @@ if __name__=="__main__":
 
     ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Graph with KNN {k} Edges')
     plt.legend()
-    plt.savefig('/home/users/b/bozianu/work/graph/unsupervised_graph/unsup-graph/blobs/plots/synthetic-data-new-knn.png')
+    plt.savefig('../plots/synthetic-data-new-knn.png')

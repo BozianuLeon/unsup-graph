@@ -18,7 +18,7 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
     for j in range(num_graphs):
         # np.random.seed(42)
         # num_points = torch.normal(mean=torch.tensor(avg_num_nodes,dtype=torch.int),std=torch.tensor(avg_num_nodes/10,dtype=torch.float32))
-        num_points = int(np.random.normal(250,25))
+        num_points = int(np.random.normal(avg_num_nodes,avg_num_nodes/10))
         cluster_centers = torch.tensor([[2.0, 2.0, 2.0],
                                         [3.0, 3.0, 3.0],
                                         [2.0, 3.0, 2.0],
@@ -61,7 +61,7 @@ if __name__=="__main__":
     test_loader = DataLoader(test_data_list, batch_size=20)
 
 
-    eval_graph = test_data_list[0].to(device)
+    eval_graph = test_data_list[0]
     edge_index = eval_graph.edge_index
 
     fig = plt.figure(figsize=(8, 8))
@@ -75,4 +75,5 @@ if __name__=="__main__":
 
     ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Graph with KNN {k} Edges')
     plt.legend()
-    plt.savefig('/home/users/b/bozianu/work/graph/unsupervised_graph/unsup-graph/blobs/plots/synthetic-data.png')
+    plt.show()
+    # plt.savefig('../plots/synthetic-data.png')
