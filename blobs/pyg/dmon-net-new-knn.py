@@ -12,38 +12,36 @@ from torch_geometric.nn import DMoNPooling, GCNConv
 
 
 
-def make_data_list(num_graphs,avg_num_nodes=250):
+def make_data_list(num_graphs,avg_num_nodes=250,k=3):
     # Generate the synthetic data
     pyg_data_list = []
     for j in range(num_graphs):
         # np.random.seed(42)
-        num_points = np.random.normal(loc=avg_num_nodes,scale=avg_num_nodes/10)
-        cluster_centers = np.array([[2.0, 2.0, 2.0],
+        num_points = torch.normal(mean=avg_num_nodes,std=avg_num_nodes/10)
+        cluster_centers = torch.tensor([[2.0, 2.0, 2.0],
                                     [3.0, 3.0, 3.0],
                                     [2.0, 3.0, 2.0],
-                                    [3.0, 2.0, 3.0]], dtype=np.float32)
+                                    [3.0, 2.0, 3.0]], dtype=torch.float32)
 
-        coordinates = np.zeros((num_points, 3), dtype=np.float32)
-        energy_consumption = np.zeros(num_points, dtype=np.float32)
-        true_cluster = np.zeros(num_points, dtype=np.float32)
+        coordinates = torch.zeros((num_points, 3), dtype=torch.float32)
+        energy_consumption = torch.zeros(num_points, dtype=torch.float32)
+        true_clusters = torch.zeros(num_points, dtype=torch.float32)
 
         for i in range(num_points):
-            cluster_idx = np.random.randint(0, 4)
-            center = cluster_centers[cluster_idx]
+            rnd_cluster_idx = torch.randint(low=0, high=4)
+            center = cluster_centers[rnd_cluster_idx]
             std_dev = 0.125
-            coordinates[i] = center + np.random.randn(3) * std_dev
-            energy_consumption[i] = 1 / np.linalg.norm(coordinates[i] - center) #np.random.uniform(0.1, 2.0)
-            true_cluster[i] = cluster_idx
+            coordinates[i] = center + torch.randn(size=3) * std_dev
+            energy_consumption[i] = 1 / np.linalg.norm(coordinates[i] - center) 
+            true_cluster[i] = rnd_cluster_idx
 
-        data_np = np.column_stack((coordinates, energy_consumption))
-        data_torch = torch.tensor(data_np, dtype=torch.float)
+        feat_mat = torch.column_stack((coordinates,energy_consumption))
 
         # Create a PyTorch Geometric Data object
-        data = torch_geometric.data.Data(x=data_torch[:, :3], y=torch.tensor(true_cluster))
-        k=3
-        edge_index = torch_geometric.nn.knn_graph(data_torch[:, :3],k=3)
+        data = torch_geometric.data.Data(x=feat_mat[:, :3], y=true_clusters)
+        edge_index = torch_geometric.nn.knn_graph(feat_mat[:, :3],k=3)
 
-        graph_data = torch_geometric.data.Data(x=data_torch[:, :3],edge_index=edge_index, y=torch.tensor(true_cluster)) 
+        graph_data = torch_geometric.data.Data(x=feat_mat[:, :3],edge_index=edge_index, y=true_clusters) 
         pyg_data_list.append(graph_data)
             
     return pyg_data_list
