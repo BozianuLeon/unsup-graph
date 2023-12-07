@@ -1,6 +1,7 @@
 import matplotlib
 from matplotlib import pyplot as plt
 import numpy as np
+import scipy
 import time
 
 import torch
@@ -16,30 +17,29 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
     # Generate the synthetic data
     pyg_data_list = []
     for j in range(num_graphs):
-        # np.random.seed(42)
-        num_points = torch.normal(mean=avg_num_nodes,std=avg_num_nodes/10)
+        num_points = int(torch.normal(mean=avg_num_nodes,std=torch.tensor(avg_num_nodes/10)))
+        
         cluster_centers = torch.tensor([[2.0, 2.0, 2.0],
-                                    [3.0, 3.0, 3.0],
-                                    [2.0, 3.0, 2.0],
-                                    [3.0, 2.0, 3.0]], dtype=torch.float32)
+                                        [3.0, 3.0, 3.0],
+                                        [2.0, 3.0, 2.0],
+                                        [3.0, 2.0, 3.0]], dtype=torch.float32)
 
         coordinates = torch.zeros((num_points, 3), dtype=torch.float32)
         point_importance = torch.zeros(num_points, dtype=torch.float32)
         true_clusters = torch.zeros(num_points, dtype=torch.float32)
 
         for i in range(num_points):
-            rnd_cluster_idx = torch.randint(low=0, high=4)
+            rnd_cluster_idx = torch.randint(low=0, high=4,size=(1,))
             center = cluster_centers[rnd_cluster_idx]
             std_dev = 0.125
-            coordinates[i] = center + torch.randn(size=3) * std_dev
+            coordinates[i] = center + torch.randn(size=(3,)) * std_dev
             point_importance[i] = 1 / np.linalg.norm(coordinates[i] - center) 
-            true_cluster[i] = rnd_cluster_idx
+            true_clusters[i] = rnd_cluster_idx
 
         feat_mat = torch.column_stack((coordinates,point_importance))
 
-
         # new
-        q1, q2, q3 = torch.percentile(point_importance, (25, 50, 75))
+        q1, q2, q3 = torch.quantile(point_importance, torch.tensor([0.25, 0.5, 0.75]))
 
         # Create masks for each quartile
         mask_q1 = point_importance <= q1
@@ -58,8 +58,7 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
         points_q3 = coordinates[mask_q3]
         points_q4 = coordinates[mask_q4]
 
-
-        tree = cKDTree(coordinates)
+        tree = scipy.spatial.cKDTree(coordinates)
 
         #variable k
         k1,k2,k3,k4 = 3,6,9,12
@@ -135,7 +134,7 @@ if __name__=="__main__":
     test_loader = DataLoader(test_data_list, batch_size=20)
 
 
-    eval_graph = test_data_list[0].to(device)
+    eval_graph = test_data_list[0]
     edge_index = eval_graph.edge_index
 
     fig = plt.figure(figsize=(8, 8))
@@ -149,4 +148,5 @@ if __name__=="__main__":
 
     ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Graph with KNN {k} Edges')
     plt.legend()
+    plt.show()
     plt.savefig('../plots/synthetic-data-new-knn.png')

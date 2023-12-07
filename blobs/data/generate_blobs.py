@@ -16,9 +16,8 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
     # Generate the synthetic data
     pyg_data_list = []
     for j in range(num_graphs):
-        # np.random.seed(42)
-        # num_points = torch.normal(mean=torch.tensor(avg_num_nodes,dtype=torch.int),std=torch.tensor(avg_num_nodes/10,dtype=torch.float32))
-        num_points = int(np.random.normal(avg_num_nodes,avg_num_nodes/10))
+        num_points = int(torch.normal(mean=avg_num_nodes,std=torch.tensor(avg_num_nodes/10)))
+        
         cluster_centers = torch.tensor([[2.0, 2.0, 2.0],
                                         [3.0, 3.0, 3.0],
                                         [2.0, 3.0, 2.0],
