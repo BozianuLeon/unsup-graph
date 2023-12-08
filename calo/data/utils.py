@@ -32,6 +32,21 @@ def wrap_check_truth(boxes,ymin,ymax):
     return boxes[np.where(suppress==0)]
 
 
+def circular_mean(phi_values):
+    """
+    Calculate the circular mean (average) of a list of phi_values.
+    Handles the periodicity of phi_values correctly.
+    
+    :param phi_values: List of phi_values in radians
+    :return: Circular mean in radians
+    """
+    sin_sum = np.sum(np.sin(phi_values))
+    cos_sum = np.sum(np.cos(phi_values))
+    circular_mean = np.arctan2(sin_sum, cos_sum)
+    return circular_mean
+
+
+
 
 
 def RetrieveCellIdsFromBox(cells,boxes):
@@ -107,33 +122,25 @@ def RetrieveCellIdsFromCluster(cells,cluster_cell_info):
 
 
 #for finding which clusters are in each box
-def total_energy_in_truth_box(cluster_d, cluster_cell_d, cells_this_event, boxes):
-    # number of clusters inside a box based on the cells in that cluster
-    # can overestimate due to wrapping. Sometimes boxes that go "off the page" 
-    # count clusters that are at the other side of the image, this is okay!
+def RetrieveClusterCellsFromBox(cluster_d, cluster_cell_d, cells_this_event, boxes):
 
-    list_cl_cell_E = []
-    list_cl_E = []
+    list_truth_cells = RetrieveCellIdsFromBox(cells_this_event,boxes)
     l_topo_cells = RetrieveCellIdsFromCluster(cells_this_event,cluster_cell_d)
+    list_cl_cells = []
     for truth_box in boxes:
-        cluster_E_in_tbox = 0
-        cluster_cell_E_in_tbox = 0
+        clusters_this_box = []
         for cl_no in range(len(l_topo_cells)):
             cluster_cells = l_topo_cells[cl_no]
             #if x condition satisfied
             if truth_box[0] <= np.mean(cluster_cells['cell_eta']) <= truth_box[2]:
                 #if y condition satisfied
                 y_mean_circ = circular_mean(cluster_cells['cell_phi'])
-                if truth_box[1] <= y_mean_circ <= truth_box[3]:
-                    cluster_E_in_tbox += cluster_d[cl_no]['cl_E_em']
-                    cluster_E_in_tbox += cluster_d[cl_no]['cl_E_had']
-                    cluster_cell_E_in_tbox += sum(cluster_cells['cell_E'])
-                elif truth_box[1] <= (y_mean_circ + (-1*np.sign(y_mean_circ))*2*np.pi) <= truth_box[3]:
-                    cluster_E_in_tbox += cluster_d[cl_no]['cl_E_em']
-                    cluster_E_in_tbox += cluster_d[cl_no]['cl_E_had']
-                    cluster_cell_E_in_tbox += sum(cluster_cells['cell_E'])
+                if (truth_box[1] <= y_mean_circ <= truth_box[3]) or (truth_box[1] <= (y_mean_circ + (-1*np.sign(y_mean_circ))*2*np.pi) <= truth_box[3]):
+                    cell_mask = np.isin(cells_this_event['cell_IdCells'],cluster_cell_d[cl_no]['cl_cell_IdCells'])
+                    desired_cells = cells_this_event[cell_mask][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_xCells','cell_yCells','cell_zCells']]
+                    clusters_this_box.append(desired_cells)
+        list_cl_cells.append(clusters_this_box)
         
-        list_cl_cell_E.append(cluster_cell_E_in_tbox)
-        list_cl_E.append(cluster_E_in_tbox)
+    return list_truth_cells, list_cl_cells
 
-    return  list_cl_E, list_cl_cell_E
+    
