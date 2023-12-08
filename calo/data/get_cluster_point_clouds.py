@@ -90,7 +90,7 @@ for i in range(len(inference)):
         ax2.set(xlim=ax1.get_xlim(),ylim=ax1.get_ylim(),zlim=ax1.get_zlim())
         ax3.set(xlim=ax1.get_xlim(),ylim=ax1.get_ylim(),zlim=ax1.get_zlim())
         ax1.set(xlabel='X',ylabel='Z',zlabel='Y',title=f'({len(truth_box_cells_i)}) Truth Box Cells')
-        ax2.set(xlabel='X',ylabel='Z',zlabel='Y',title=f'({len(np.concatenate(cluster_cells_i))}) Total Cluster Cells')
+        ax2.set(xlabel='X',ylabel='Z',zlabel='Y',title=f'({len(np.concatenate(cluster_cells_i))}) Total Cluster Cells, {len(cluster_cells_i)} Clusters')
         ax3.set(xlabel='X',ylabel='Z',zlabel='Y',title=f'({len(truth_box_cells_2sig_i)}) Truth Box Cells |> 2sig|')
         figure.savefig(f'../plots/{truth_box_number}/cells-graph.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
 
