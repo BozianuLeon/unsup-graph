@@ -2,6 +2,7 @@ import matplotlib
 from matplotlib import pyplot as plt
 import numpy as np
 import time
+import os
 
 import torch
 from torch.nn import Linear
@@ -16,8 +17,7 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
     # Generate the synthetic data
     pyg_data_list = []
     for j in range(num_graphs):
-        # np.random.seed(42)
-        num_points = torch.normal(mean=avg_num_nodes,std=avg_num_nodes/10)
+        num_points = int(torch.normal(mean=avg_num_nodes,std=torch.tensor(avg_num_nodes/10)))
         cluster_centers = torch.tensor([[2.0, 2.0, 2.0],
                                     [3.0, 3.0, 3.0],
                                     [2.0, 3.0, 2.0],
@@ -28,12 +28,12 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
         true_clusters = torch.zeros(num_points, dtype=torch.float32)
 
         for i in range(num_points):
-            rnd_cluster_idx = torch.randint(low=0, high=4)
+            rnd_cluster_idx = torch.randint(low=0, high=4,size=(1,))
             center = cluster_centers[rnd_cluster_idx]
             std_dev = 0.125
-            coordinates[i] = center + torch.randn(size=3) * std_dev
+            coordinates[i] = center + torch.randn(size=(3,)) * std_dev
             energy_consumption[i] = 1 / np.linalg.norm(coordinates[i] - center) 
-            true_cluster[i] = rnd_cluster_idx
+            true_clusters[i] = rnd_cluster_idx
 
         feat_mat = torch.column_stack((coordinates,energy_consumption))
 
@@ -48,29 +48,30 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
 
 
 
-
 #initialise model
 class Net(torch.nn.Module):
     def __init__(self, in_channels, out_channels, hidden_channels=32):
         super().__init__()
 
-        self.conv1 = GCNConv(in_channels, 128)
+        self.conv1 = torch_geometric.nn.GCNConv(in_channels, 128)
         self.relu = torch.nn.ReLU()
-        self.pool1 = DMoNPooling(128,out_channels)
+        self.pool1 = torch_geometric.nn.DMoNPooling(128,out_channels)
 
     def forward(self, x, edge_index, batch):
         x = self.conv1(x, edge_index)
         x = self.relu(x)
         # return F.log_softmax(x,dim=-1), 0
 
-        x, mask = to_dense_batch(x, batch)
-        adj = to_dense_adj(edge_index, batch)
+        x, mask = torch_geometric.utils.to_dense_batch(x, batch)
+        adj = torch_geometric.utils.to_dense_adj(edge_index, batch)
         s, x, adj, sp1, o1, c1 = self.pool1(x, adj, mask)
 
         return F.log_softmax(x, dim=-1), sp1+o1+c1, s
 
-
-
+num_clusters = 6
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = Net(3, num_clusters).to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 def train(train_loader):
     model.train()
@@ -87,7 +88,6 @@ def train(train_loader):
     return loss_all / len(train_data_list)
 
 
-
 @torch.no_grad()
 def test(loader):
     model.eval()
@@ -99,9 +99,8 @@ def test(loader):
         pred, tot_loss, _ = model(data.x, data.edge_index, data.batch)
         loss = tot_loss # + F.nll_loss(pred, data.y.view(-1))
         loss_all += data.y.size(0) * float(loss)
-        # correct += int(pred.max(dim=1)[1].eq(data.y.view(-1)).sum())
 
-    return loss_all / len(loader.dataset)#, correct / len(loader.dataset)
+    return loss_all / len(loader.dataset)
 
 
 
@@ -113,12 +112,13 @@ if __name__=='__main__':
     val_data_list = make_data_list(200)
     test_data_list = make_data_list(100)
 
-    train_loader = DataLoader(train_data_list, batch_size=20)
-    val_loader = DataLoader(val_data_list, batch_size=20)
-    test_loader = DataLoader(test_data_list, batch_size=20)
+    train_loader = torch_geometric.loader.DataLoader(train_data_list, batch_size=20)
+    val_loader = torch_geometric.loader.DataLoader(val_data_list, batch_size=20)
+    test_loader = torch_geometric.loader.DataLoader(test_data_list, batch_size=20)
 
     #run training
-    for epoch in range(1, 40):
+    num_epochs = 40
+    for epoch in range(1, num_epochs):
         start = time.perf_counter()
         train_loss = train(train_loader)
         train_loss2 = test(train_loader)
@@ -127,12 +127,27 @@ if __name__=='__main__':
         timing = 0
         print(f"Epoch: {epoch:03d}, Train Loss: {train_loss:.3f}, Train Loss2: {train_loss2:.3f}, Val Loss: {val_loss:.3f}, Test Loss: {test_loss:.3f}, Time: {time.perf_counter() - start:.3f}s")
 
+    model_name = f"dmon_{num_epochs}e_{num_clusters}clus"
+    torch.save(model.state_dict(), f"models/{model_name}.pth")
 
-    #evakuate using first graph
-    eval_graph = test_data_list[0].to(device)
+
+
+    #evaluate using first graph
+    eval_graph = test_data_list[0]
     pred,tot_loss,clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
 
     predicted_classes = clus_ass.squeeze().argmax(dim=1).numpy()
     unique_values, counts = np.unique(predicted_classes, return_counts=True)
 
-        
+    if os.path.exists(f"../plots/results/") is False: os.makedirs(f"../plots/results/")
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    scatter = ax.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], c=predicted_classes, marker='o')
+    labels = [f"{value}: ({count})" for value,count in zip(unique_values, counts)]
+    ax.legend(handles=scatter.legend_elements(num=None)[0],labels=labels,title=f"Classes {len(unique_values)}/{num_clusters}",bbox_to_anchor=(1.07, 0.25),loc='lower left')
+    ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Graph with KNN Edges')
+    fig.savefig(f'../plots/results/synthetic_data_dmon_{num_clusters}clus.png', bbox_inches="tight")
+    print()
+    for value, count in zip(unique_values, counts):
+        print(f"Cluster {value}: {count} occurrences")
+

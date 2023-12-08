@@ -95,6 +95,25 @@ for i in range(len(inference)):
         figure.savefig(f'../plots/{truth_box_number}/cells-graph.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
 
 
+        figure = plt.figure(figsize=(14, 8))
+        ax1 = figure.add_subplot(131, projection='3d')
+        ax2 = figure.add_subplot(132, projection='3d')
+        ax3 = figure.add_subplot(133, projection='3d')
+
+        ax1.scatter(truth_box_cells_i['cell_phi'], truth_box_cells_i['cell_zCells'], np.sqrt(truth_box_cells_i['cell_yCells']**2+truth_box_cells_i['cell_xCells']**2), marker='o',s=4,color='green')
+        ax3.scatter(truth_box_cells_2sig_i['cell_phi'], truth_box_cells_2sig_i['cell_zCells'], np.sqrt(truth_box_cells_2sig_i['cell_yCells']**2+truth_box_cells_2sig_i['cell_xCells']**2), marker='o',s=4,color='green')
+        for cl_idx in range(len(cluster_cells_i)):
+            cluster_inside_box = cluster_cells_i[cl_idx]
+            ax2.scatter(cluster_inside_box['cell_phi'], cluster_inside_box['cell_zCells'], np.sqrt(cluster_inside_box['cell_yCells']**2+cluster_inside_box['cell_xCells']**2), marker='^',s=4)
+
+        ax2.set(xlim=ax1.get_xlim(),ylim=ax1.get_ylim(),zlim=ax1.get_zlim())
+        ax3.set(xlim=ax1.get_xlim(),ylim=ax1.get_ylim(),zlim=ax1.get_zlim())
+        ax1.set(xlabel='phi',ylabel='Z',zlabel='R',title=f'({len(truth_box_cells_i)}) Truth Box Cells')
+        ax2.set(xlabel='phi',ylabel='Z',zlabel='R',title=f'({len(np.concatenate(cluster_cells_i))}) Total Cluster Cells')
+        ax3.set(xlabel='phi',ylabel='Z',zlabel='R',title=f'({len(truth_box_cells_2sig_i)}) Truth Box Cells |> 2sig|')
+        figure.savefig(f'../plots/{truth_box_number}/cells-graph-zphir.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
+
+
 
         break
 

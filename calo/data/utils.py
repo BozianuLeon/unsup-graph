@@ -1,4 +1,5 @@
 import numpy as np
+import scipy
 import torch
 import torchvision
 
@@ -85,7 +86,7 @@ def RetrieveCellIdsFromBox(cells,boxes):
             y_cond = np.logical_and.reduce((cells['cell_phi']>=phi_min, cells['cell_phi']<=phi_max)) #multiple conditions #could use np.all(x,axis)
         
         tot_cond = np.logical_and(x_condition,y_cond)
-        cells_here = cells[np.where(tot_cond)][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_xCells','cell_yCells','cell_zCells']]
+        cells_here = cells[np.where(tot_cond)][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
         if len(cells_here):
             list_containing_all_cells.append(cells_here)
         else:
@@ -113,7 +114,7 @@ def RetrieveCellIdsFromCluster(cells,cluster_cell_info):
     list_containing_all_cells = []
     for cluster in range(len(cluster_cell_info)):
         cell_mask = np.isin(cells['cell_IdCells'],cluster_cell_info[cluster]['cl_cell_IdCells'])
-        desired_cells = cells[cell_mask][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_xCells','cell_yCells','cell_zCells']]
+        desired_cells = cells[cell_mask][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
         list_containing_all_cells.append(desired_cells)
     # return desired_cells
     return list_containing_all_cells
@@ -137,10 +138,82 @@ def RetrieveClusterCellsFromBox(cluster_d, cluster_cell_d, cells_this_event, box
                 y_mean_circ = circular_mean(cluster_cells['cell_phi'])
                 if (truth_box[1] <= y_mean_circ <= truth_box[3]) or (truth_box[1] <= (y_mean_circ + (-1*np.sign(y_mean_circ))*2*np.pi) <= truth_box[3]):
                     cell_mask = np.isin(cells_this_event['cell_IdCells'],cluster_cell_d[cl_no]['cl_cell_IdCells'])
-                    desired_cells = cells_this_event[cell_mask][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_xCells','cell_yCells','cell_zCells']]
+                    desired_cells = cells_this_event[cell_mask][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
                     clusters_this_box.append(desired_cells)
         list_cl_cells.append(clusters_this_box)
         
     return list_truth_cells, list_cl_cells
 
     
+
+
+
+
+def quartile_variable_knn(feature_matrix,point_importance):
+
+    tree = scipy.spatial.cKDTree(feature_matrix)
+    q1, q2, q3 = torch.quantile(point_importance, torch.tensor([0.25, 0.75, 0.95]))
+    
+    # Create masks for each quartile
+    mask_q1 = point_importance <= q1
+    mask_q2 = (q1 < point_importance) & (point_importance <= q2)
+    mask_q3 = (q2 < point_importance) & (point_importance <= q3)
+    mask_q4 = point_importance > q3
+
+    # Extract indices for each quartile
+    indices_q1 = torch.nonzero(mask_q1, as_tuple=False).squeeze(dim=1)
+    indices_q2 = torch.nonzero(mask_q2, as_tuple=False).squeeze(dim=1)
+    indices_q3 = torch.nonzero(mask_q3, as_tuple=False).squeeze(dim=1)
+    indices_q4 = torch.nonzero(mask_q4, as_tuple=False).squeeze(dim=1)
+
+    points_q1 = feature_matrix[mask_q1]
+    points_q2 = feature_matrix[mask_q2]
+    points_q3 = feature_matrix[mask_q3]
+    points_q4 = feature_matrix[mask_q4]
+
+    #variable k
+    # k1,k2,k3,k4 = 3,6,9,12
+    k1,k2,k3,k4 = 1,2,5,10
+
+    distances1,indices1 = tree.query(points_q1, k=k1)
+    distances1 = torch.from_numpy(distances1).to(torch.float32)
+    col1 = torch.from_numpy(indices1).to(torch.long)
+    row1 = torch.arange(col1.size(0),dtype=torch.long).view(-1,1).repeat(1,k1)
+    mask = ~torch.isinf(distances1).view(-1).to(torch.bool)
+    row1, col1 = row1.view(-1)[mask], col1.view(-1)[mask]
+    #need to return to original indices:
+    orig_row1 = torch.gather(indices_q1,0,row1)
+    #return pairs of source,dest node indices.
+    edges_q1 = torch.stack([orig_row1, col1], dim=0)
+
+    distances2,indices2 = tree.query(points_q2, k=k2)
+    distances2 = torch.from_numpy(distances2).to(torch.float32)
+    col2 = torch.from_numpy(indices2).to(torch.long)
+    row2 = torch.arange(col2.size(0),dtype=torch.long).view(-1,1).repeat(1,k2)
+    mask = ~torch.isinf(distances2).view(-1).to(torch.bool)
+    row2, col2 = row2.view(-1)[mask], col2.view(-1)[mask]
+    orig_row2 = torch.gather(indices_q2,0,row2)
+    edges_q2 = torch.stack([orig_row2, col2], dim=0)
+
+    distances3,indices3 = tree.query(points_q3, k=k3)
+    distances3 = torch.from_numpy(distances3).to(torch.float32)
+    col3 = torch.from_numpy(indices3).to(torch.long)
+    row3 = torch.arange(col3.size(0),dtype=torch.long).view(-1,1).repeat(1,k3)
+    mask = ~torch.isinf(distances3).view(-1).to(torch.bool)
+    row3, col3 = row3.view(-1)[mask], col3.view(-1)[mask]
+    orig_row3 = torch.gather(indices_q3,0,row3)
+    edges_q3 = torch.stack([orig_row3, col3], dim=0)
+
+    distances4,indices4 = tree.query(points_q4, k=k4)
+    distances4 = torch.from_numpy(distances4).to(torch.float32)
+    col4 = torch.from_numpy(indices4).to(torch.long)
+    row4 = torch.arange(col4.size(0),dtype=torch.long).view(-1,1).repeat(1,k4)
+    mask = ~torch.isinf(distances4).view(-1).to(torch.bool)
+    row4, col4 = row4.view(-1)[mask], col4.view(-1)[mask]
+    orig_row4 = torch.gather(indices_q4,0,row4)
+    edges_q4 = torch.stack([orig_row4, col4], dim=0)
+
+
+    edges_total = torch.cat((edges_q1, edges_q2, edges_q3, edges_q4), dim=1)
+
+    return edges_total
