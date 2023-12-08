@@ -2,6 +2,7 @@ import numpy as np
 import scipy
 import h5py
 import matplotlib.pyplot as plt
+import pickle
 import os
 
 import torch
@@ -18,32 +19,32 @@ with open("../../../struc_array.npy", "rb") as file:
 data_list = []
 clusters_list = []
 for i in range(len(inference)):
-    print(i)
-    extent_i = inference[i]['extent']
-    preds = inference[i]['p_boxes']
-    trues = inference[i]['t_boxes']
-    scores = inference[i]['p_scores']
-    pees = preds[np.where(preds[:,0] != 0)]
-    tees = trues[np.where(trues[:,0] != 0)]
-
-    pees = torch.tensor(pees)
-    tees = torch.tensor(tees)
-
-    #make boxes cover extent
-    tees[:,(0,2)] = (tees[:,(0,2)]*(extent_i[1]-extent_i[0]))+extent_i[0]
-    tees[:,(1,3)] = (tees[:,(1,3)]*(extent_i[3]-extent_i[2]))+extent_i[2]
-
-    pees[:,(0,2)] = (pees[:,(0,2)]*(extent_i[1]-extent_i[0]))+extent_i[0]
-    pees[:,(1,3)] = (pees[:,(1,3)]*(extent_i[3]-extent_i[2]))+extent_i[2]
-
-    #wrap check
-    # pees = wrap_check_NMS(pees,scores,MIN_CELLS_PHI,MAX_CELLS_PHI,threshold=0.2)
-    tees = utils.wrap_check_truth(tees,MIN_CELLS_PHI,MAX_CELLS_PHI)
-
-    #get the cells
+    
     h5f = inference[i]['h5file']
     event_no = inference[i]['event_no']
     if h5f.decode('utf-8')=="01":
+        extent_i = inference[i]['extent']
+        preds = inference[i]['p_boxes']
+        trues = inference[i]['t_boxes']
+        scores = inference[i]['p_scores']
+        pees = preds[np.where(preds[:,0] != 0)]
+        tees = trues[np.where(trues[:,0] != 0)]
+
+        pees = torch.tensor(pees)
+        tees = torch.tensor(tees)
+
+        #make boxes cover extent
+        tees[:,(0,2)] = (tees[:,(0,2)]*(extent_i[1]-extent_i[0]))+extent_i[0]
+        tees[:,(1,3)] = (tees[:,(1,3)]*(extent_i[3]-extent_i[2]))+extent_i[2]
+
+        pees[:,(0,2)] = (pees[:,(0,2)]*(extent_i[1]-extent_i[0]))+extent_i[0]
+        pees[:,(1,3)] = (pees[:,(1,3)]*(extent_i[3]-extent_i[2]))+extent_i[2]
+
+        #wrap check
+        # pees = wrap_check_NMS(pees,scores,MIN_CELLS_PHI,MAX_CELLS_PHI,threshold=0.2)
+        tees = utils.wrap_check_truth(tees,MIN_CELLS_PHI,MAX_CELLS_PHI)
+
+        print(i)
         cells_file = "../../../user.cantel.34126190._0000{}.calocellD3PD_mc16_JZ4W.r10788.h5".format(h5f.decode('utf-8'))
         with h5py.File(cells_file,"r") as f:
             h5group = f["caloCells"]
@@ -70,6 +71,9 @@ for i in range(len(inference)):
         data_list.append(truth_box_graph_data)
         clusters_list.append(cluster_cells_i)
 
+with open('lists/truth_box_graphs.pkl', 'wb') as f1:
+    pickle.dump(data_list, f1)
 
-
+with open('lists/clusters_list.pkl', 'wb') as f2:
+    pickle.dump(clusters_list, f2)
 
