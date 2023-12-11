@@ -66,10 +66,12 @@ for i in range(len(inference)):
             feature_matrix = truth_box_cells_i[['cell_xCells','cell_yCells','cell_zCells','cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_TimeCells']].view(np.float32).reshape(truth_box_cells_i.shape + (-1,))
             cell_significance = torch.tensor(abs(truth_box_cells_i['cell_E'] / truth_box_cells_i['cell_Sigma']))
             edge_index = utils.quartile_variable_knn(torch.tensor(feature_matrix[:, :3]),cell_significance)
-            truth_box_graph_data = torch_geometric.data.Data(x=feature_matrix[:, :3],edge_index=edge_index) 
+            truth_box_graph_data = torch_geometric.data.Data(x=torch.tensor(feature_matrix),edge_index=edge_index) 
 
-        data_list.append(truth_box_graph_data)
-        clusters_list.append(cluster_cells_i)
+            data_list.append(truth_box_graph_data)
+            clusters_list.append(cluster_cells_i)
+
+
 
 with open('lists/truth_box_graphs.pkl', 'wb') as f1:
     pickle.dump(data_list, f1)

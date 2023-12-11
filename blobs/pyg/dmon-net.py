@@ -62,13 +62,17 @@ class Net(torch.nn.Module):
         x = self.relu(x)
         # return F.log_softmax(x,dim=-1), 0
 
-        x, mask = to_dense_batch(x, batch)
-        adj = to_dense_adj(edge_index, batch)
+        x, mask = torch_geometric.utils.to_dense_batch(x, batch)
+        adj = torch_geometric.utils.to_dense_adj(edge_index, batch)
         s, x, adj, sp1, o1, c1 = self.pool1(x, adj, mask)
 
         return F.log_softmax(x, dim=-1), sp1+o1+c1, s
 
 
+num_clusters = 6
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model = Net(3, num_clusters).to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 
 def train(train_loader):

@@ -1,4 +1,5 @@
 blobs/plots/*
 blobs/models/*
 calo/plots/*
+calo/data/lists/*
 .DS_Store
