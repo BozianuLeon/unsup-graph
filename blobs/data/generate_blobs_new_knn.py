@@ -18,7 +18,6 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
     pyg_data_list = []
     for j in range(num_graphs):
         num_points = int(torch.normal(mean=avg_num_nodes,std=torch.tensor(avg_num_nodes/10)))
-        print(num_points,type(num_points))
         
         cluster_centers = torch.tensor([[2.0, 2.0, 2.0],
                                         [3.0, 3.0, 3.0],

@@ -26,11 +26,10 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
         coordinates = torch.zeros((num_points, 3), dtype=torch.float32)
         point_importance = torch.zeros(num_points, dtype=torch.float32)
         true_clusters = torch.zeros(num_points, dtype=torch.float32)
-
         for i in range(num_points):
             rnd_cluster_idx = torch.randint(low=0, high=4, size=(1,))
             center = cluster_centers[rnd_cluster_idx]
-            std_dev = 0.125
+            std_dev = 0.35
             coordinates[i] = center + torch.randn(size=(3,)) * std_dev
             point_importance[i] = 1 / np.linalg.norm(coordinates[i] - center) 
             true_clusters[i] = rnd_cluster_idx
@@ -39,7 +38,7 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
 
         # Create a PyTorch Geometric Data object
         data = torch_geometric.data.Data(x=feat_mat[:, :3], y=true_clusters)
-        edge_index = torch_geometric.nn.knn_graph(feat_mat[:, :3],k=3)
+        edge_index = torch_geometric.nn.knn_graph(x=feat_mat[:, :3],k=3)
 
         graph_data = torch_geometric.data.Data(x=feat_mat[:, :3],edge_index=edge_index, y=true_clusters) 
         pyg_data_list.append(graph_data)
@@ -55,13 +54,22 @@ class Net(torch.nn.Module):
         super().__init__()
 
         self.conv1 = GCNConv(in_channels, 128)
+        self.conv2 = GCNConv(128, 128)
         self.relu = torch.nn.ReLU()
         self.pool1 = DMoNPooling(128,out_channels)
 
     def forward(self, x, edge_index, batch):
         x = self.conv1(x, edge_index)
         x = self.relu(x)
-        # return F.log_softmax(x,dim=-1), 0
+
+        #recompute adjacency
+        edge_index2 = torch_geometric.nn.knn_graph(
+            x=x[:,[0,1,2,-1]],
+            k=3,
+            batch=batch,
+        )
+        x = self.conv2(x,edge_index2)
+        x = self.relu(x)
 
         x, mask = torch_geometric.utils.to_dense_batch(x, batch)
         adj = torch_geometric.utils.to_dense_adj(edge_index, batch)
@@ -158,7 +166,8 @@ if __name__=='__main__':
     labels = [f"{value}: ({count})" for value,count in zip(unique_values, counts)]
     ax2.legend(handles=scatter.legend_elements(num=None)[0],labels=labels,title=f"Classes {len(unique_values)}/{num_clusters}",bbox_to_anchor=(1.07, 0.25),loc='lower left')
     ax2.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Graph with KNN Edges')
-    fig.savefig(f'../plots/results/synthetic_data_knn_dmon_{num_clusters}clus.png', bbox_inches="tight")
+    # fig.savefig(f'../plots/results/synthetic_data_knn_dynamic_dmon_{num_clusters}clus.png', bbox_inches="tight")
+    plt.show()
     print()
     for value, count in zip(unique_values, counts):
         print(f"Cluster {value}: {count} occurrences")
