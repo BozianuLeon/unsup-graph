@@ -2,4 +2,5 @@ blobs/plots/*
 blobs/models/*
 calo/plots/*
 calo/data/lists/*
+*.pth
 .DS_Store
