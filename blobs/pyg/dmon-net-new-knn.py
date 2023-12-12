@@ -20,13 +20,9 @@ def knn_graph(
         batch=None,
 ):
     # Finds for each element in x the k nearest points in x-space
-    # k changes depending on the importance of the node as defined in 
-    # x_ranking tensor
     
-
     if batch is None:
         batch = x.new_zeros(x.size(0), dtype=torch.long)
-
 
     x = x.view(-1, 1) if x.dim() == 1 else x
     assert x.dim() == 2 and batch.dim() == 1
@@ -82,23 +78,25 @@ def var_knn_graph(
 
     # Concat batch/features to ensure no cross-links between examples exist.
     x = torch.cat([x, 2 * x.size(1) * batch.view(-1, 1).to(x.dtype)], dim=-1)
-    
+
     # Pre-calculate KNN tree
-    tree = scipy.spatial.cKDTree(x.detach())
+    tree = scipy.spatial.cKDTree(x.detach()) #this needs to be restricted to coordinates/columns we actually want!
 
     quantile_values = torch.quantile(x_ranking, torch.tensor(quantiles))
-    # edges_list = torch.empty((2,1))
-    edges_list = torch.tensor([[0],[0]])
-    for i in range(1,len(quantile_values)+1):
+    edges_list = torch.tensor([[],[]])
+    for i in range(len(quantile_values)+1):
         # Create masks for each quantile
-        if i==len(quantile_values):
-            mask = point_importance>quantile_values[i-1]
+        if i==0:
+            qua_mask = x_ranking<quantile_values[i]
+        elif i==len(quantile_values):
+            qua_mask = x_ranking>quantile_values[i-1]
         else:
-            mask = (quantile_values[i-1]<point_importance) & (point_importance <= quantile_values[i])
+            qua_mask = (quantile_values[i-1]<x_ranking) & (x_ranking <= quantile_values[i])
         
         # Extract indices for each quantile
-        indices = torch.nonzero(mask, as_tuple=False).squeeze(dim=1)
-        nodes_q = x[mask]
+        indices = torch.nonzero(qua_mask, as_tuple=False).squeeze()
+        qua_mask = qua_mask.squeeze()
+        nodes_q = x[qua_mask]
 
         dist, col = tree.query(nodes_q.detach(),k=k[i],distance_upper_bound=x.size(1)) 
         dist = torch.from_numpy(dist).to(x.dtype)
@@ -110,18 +108,30 @@ def var_knn_graph(
         row = torch.gather(indices,0,row)
         # pairs of source, dest node indices
         edges_q = torch.stack([row, col], dim=0)
-        #TODO: THIS PART IS BROKEN!
         edges_list = torch.cat([edges_list,edges_q],dim=1)
-
 
     return edges_list
 
 
 
 
+# x = torch.Tensor([[-100, -100], [-100, 100], [100, -100], [100, 100]])
+# batch_x = torch.tensor([0, 0, 0, 0])
+# assign_index = knn_graph(x, 2, batch_x)
+# print(assign_index)
+# batch_x = torch.tensor([0, 0, 0, 1])
+# assign_index = knn_graph(x, 2, batch_x)
+# print(assign_index)
+# print()
+# point_importance = torch.tensor([[1.5],[1.0],[0.8],[2.0]])
+# batch_x = torch.tensor([0, 0, 0, 0])
+# assign_index = var_knn_graph(x,[2,2,2,2],[0.25,0.5,0.75],point_importance,batch=batch_x)
+# print(assign_index)
+# batch_x = torch.tensor([0, 0, 0, 1])
+# assign_index = var_knn_graph(x,[2,2,2,2],[0.25,0.5,0.75],point_importance,batch=batch_x)
+# print(assign_index)
 
-
-
+# quit()
 
 cluster_centers = torch.tensor([[2.0, 2.0, 2.0],
                                 [3.0, 3.0, 3.0],
