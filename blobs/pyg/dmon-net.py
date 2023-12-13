@@ -118,7 +118,7 @@ if __name__=='__main__':
     val_loader = DataLoader(val_data_list, batch_size=20)
     test_loader = DataLoader(test_data_list, batch_size=20)
 
-    num_clusters = 6
+    num_clusters = 4
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = Net(3, num_clusters).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)

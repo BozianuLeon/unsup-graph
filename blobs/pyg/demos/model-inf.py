@@ -53,10 +53,12 @@ def var_knn_graph(
         quantiles,
         x_ranking,
         batch=None,
+        loop=False,
 ):
     # Finds for each element in x the k nearest points in x-space
     # k changes depending on the importance of the node as defined in 
     # x_ranking tensor
+    # https://github.com/rusty1s/pytorch_cluster/blob/master/torch_cluster/knn.py
     
     if batch is None:
         batch = x.new_zeros(x.size(0), dtype=torch.long)
@@ -104,9 +106,15 @@ def var_knn_graph(
         row, col = row.view(-1)[mask], col.view(-1)[mask]
         # Return to original indices
         row = torch.gather(indices,0,row)
+
+        if not loop:
+            mask = row != col
+            row,col = row[mask], col[mask]
+
         # pairs of source, dest node indices
         edges_q = torch.stack([row, col], dim=0)
         # edges_q = torch.stack([col,row], dim=0)
+
         edges_list = torch.cat([edges_list,edges_q],dim=1)
 
     return edges_list
@@ -119,7 +127,7 @@ def make_data_list(num_graphs,sigma,avg_num_nodes=250,ks=[3,3,3,3]):
     pyg_data_list = []
     for j in range(num_graphs):
         num_points = int(torch.normal(mean=avg_num_nodes,std=torch.tensor(avg_num_nodes/100)))
-        
+        num_points = 25
         cluster_centers = torch.tensor([[2.0, 2.0, 2.0],
                                         [3.0, 3.0, 3.0],
                                         [2.0, 3.0, 2.0],
@@ -134,13 +142,21 @@ def make_data_list(num_graphs,sigma,avg_num_nodes=250,ks=[3,3,3,3]):
             center = cluster_centers[rnd_cluster_idx]
             std_dev = sigma
             coordinates[i] = center + torch.randn(size=(3,)) * std_dev
-            point_importance[i] = 1 / np.linalg.norm(coordinates[i] - center) 
+            point_importance[i] = 1 / np.sqrt(np.linalg.norm(coordinates[i] - center))
             true_clusters[i] = rnd_cluster_idx
 
         feat_mat = torch.column_stack((coordinates,point_importance))
         edge_index = var_knn_graph(feat_mat[:,:3],k=ks,quantiles=[0.25,0.5,0.8],x_ranking=point_importance)
-        # edge_index2 = torch_geometric.nn.knn_graph(feat_mat[:, :3],k=3,loop=True)
-        graph_data = torch_geometric.data.Data(x=feat_mat,edge_index=edge_index, y=true_clusters)
+        sorted_values, indices = torch.sort(edge_index[1])
+        sorted_corresponding_tensor = edge_index[0][indices]
+        print(torch.stack((sorted_corresponding_tensor,sorted_values),dim=0))
+        print(edge_index.shape)
+        print()
+        edge_index = torch_geometric.nn.knn_graph(feat_mat[:, :3],k=3,loop=True)
+        print(edge_index)
+        print(edge_index.shape)
+        quit()
+        graph_data = torch_geometric.data.Data(x=feat_mat[:,:3],edge_index=edge_index, y=true_clusters)
         
         pyg_data_list.append(graph_data)
             
@@ -180,7 +196,7 @@ if __name__=='__main__':
     sigma = 0.12
     ks = [3,3,3,3]
     num_clusters = 4
-    saved_model = f"dmon_sig12_xyzE_k3333_4clus_40e"
+    saved_model = f"dmon_sig12_xyz_k3333_4clus_40e"
 
     #generate data and put into pytorch geometric dataloaders
     train_data_list = make_data_list(1000,sigma=sigma,ks=ks)
@@ -214,7 +230,7 @@ if __name__=='__main__':
         
         ax.plot([x_src, x_dst], [y_src, y_dst], [z_src, z_dst], c='r')
 
-    ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Graph with var KNN Edges')
+    ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Input Graph with var KNN Edges')
 
     ax2 = fig.add_subplot(122, projection='3d')
     scatter = ax2.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], c=predicted_classes, marker='o')

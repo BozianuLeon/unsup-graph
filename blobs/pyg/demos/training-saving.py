@@ -133,12 +133,12 @@ def make_data_list(num_graphs,sigma,avg_num_nodes=250,ks=[3,3,3,3]):
             center = cluster_centers[rnd_cluster_idx]
             std_dev = sigma
             coordinates[i] = center + torch.randn(size=(3,)) * std_dev
-            point_importance[i] = 1 / np.linalg.norm(coordinates[i] - center) 
+            point_importance[i] = 1 / np.sqrt(np.linalg.norm(coordinates[i] - center)) 
             true_clusters[i] = rnd_cluster_idx
 
         feat_mat = torch.column_stack((coordinates,point_importance))
-        # edge_index = var_knn_graph(feat_mat[:,:3],k=ks,quantiles=[0.25,0.5,0.8],x_ranking=point_importance)
-        edge_index = torch_geometric.nn.knn_graph(feat_mat[:, :3],k=3)
+        edge_index = var_knn_graph(feat_mat[:,:3],k=ks,quantiles=[0.25,0.5,0.8],x_ranking=point_importance)
+        # edge_index2 = torch_geometric.nn.knn_graph(feat_mat[:, :3],k=3,loop=True)
 
         graph_data = torch_geometric.data.Data(x=feat_mat,edge_index=edge_index, y=true_clusters) 
         pyg_data_list.append(graph_data)
@@ -232,5 +232,5 @@ if __name__=='__main__':
         print(f"Epoch: {epoch:03d}, Train Loss: {train_loss:.3f}, Train Loss2: {train_loss2:.3f}, Val Loss: {val_loss:.3f}, Test Loss: {test_loss:.3f}, Time: {time.perf_counter() - start:.3f}s")
 
     k_name = "".join(str(element) for element in ks)
-    model_name = f"dmon_sig{int(100*sigma)}_xyzE_k{k_name}_{num_clusters}clus_{num_epochs}e"
+    model_name = f"dmon_sig{int(100*sigma)}_xyzsqrtE_k{k_name}_{num_clusters}clus_{num_epochs}e"
     torch.save(model.state_dict(), f"{model_name}.pth")

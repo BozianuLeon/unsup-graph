@@ -59,7 +59,6 @@ def var_knn_graph(
     # k changes depending on the importance of the node as defined in 
     # x_ranking tensor
     
-
     if batch is None:
         batch = x.new_zeros(x.size(0), dtype=torch.long)
 
@@ -80,10 +79,10 @@ def var_knn_graph(
     x = torch.cat([x, 2 * x.size(1) * batch.view(-1, 1).to(x.dtype)], dim=-1)
 
     # Pre-calculate KNN tree
-    tree = scipy.spatial.cKDTree(x.detach()) #this needs to be restricted to coordinates/columns we actually want!
+    tree = scipy.spatial.cKDTree(x.detach()) 
 
     quantile_values = torch.quantile(x_ranking, torch.tensor(quantiles))
-    edges_list = torch.tensor([[],[]])
+    edges_list = torch.tensor([[],[]],dtype=torch.int64)
     for i in range(len(quantile_values)+1):
         # Create masks for each quantile
         if i==0:
@@ -115,63 +114,8 @@ def var_knn_graph(
 
 
 
-# x = torch.Tensor([[-100, -100], [-100, 100], [100, -100], [100, 100]])
-# batch_x = torch.tensor([0, 0, 0, 0])
-# assign_index = knn_graph(x, 2, batch_x)
-# print(assign_index)
-# batch_x = torch.tensor([0, 0, 0, 1])
-# assign_index = knn_graph(x, 2, batch_x)
-# print(assign_index)
-# print()
-# point_importance = torch.tensor([[1.5],[1.0],[0.8],[2.0]])
-# batch_x = torch.tensor([0, 0, 0, 0])
-# assign_index = var_knn_graph(x,[2,2,2,2],[0.25,0.5,0.75],point_importance,batch=batch_x)
-# print(assign_index)
-# batch_x = torch.tensor([0, 0, 0, 1])
-# assign_index = var_knn_graph(x,[2,2,2,2],[0.25,0.5,0.75],point_importance,batch=batch_x)
-# print(assign_index)
 
-# quit()
-
-cluster_centers = torch.tensor([[2.0, 2.0, 2.0],
-                                [3.0, 3.0, 3.0],
-                                [2.0, 3.0, 2.0],
-                                [3.0, 2.0, 3.0]], dtype=torch.float32)
-num_points = 16
-coordinates = torch.zeros((num_points, 3), dtype=torch.float32)
-point_importance = torch.zeros(num_points, dtype=torch.float32)
-true_clusters = torch.zeros(num_points, dtype=torch.float32)
-
-for i in range(num_points):
-    rnd_cluster_idx = torch.randint(low=0, high=4,size=(1,))
-    center = cluster_centers[rnd_cluster_idx]
-    std_dev = 0.35
-    coordinates[i] = center + torch.randn(size=(3,)) * std_dev
-    point_importance[i] = 1 / np.linalg.norm(coordinates[i] - center) 
-    true_clusters[i] = rnd_cluster_idx
-
-batch = torch.ones((coordinates.size(0)))
-edge_index = knn_graph(coordinates,k=3,batch=batch)
-print(edge_index)
-print(edge_index.shape)
-print()
-print()
-print()
-print()
-
-# edge_index = var_knn_graph(coordinates,[2,4,6,8],[0.25,0.5,0.75],coordinates[:,0],batch)
-edge_index = var_knn_graph(coordinates,[3,3,3,3],[0.25,0.5,0.75],coordinates[:,0],batch)
-sorted_values, indices = torch.sort(edge_index[0])
-sorted_corresponding_tensor = edge_index[1][indices]
-print(torch.stack((sorted_values,sorted_corresponding_tensor),dim=0))
-# print(edge_index)
-print(edge_index.shape)
-
-
-quit()
-
-
-def make_data_list(num_graphs,avg_num_nodes=250,k=3):
+def make_data_list(num_graphs,avg_num_nodes=250):
     # Generate the synthetic data
     pyg_data_list = []
     for j in range(num_graphs):
@@ -189,87 +133,15 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
         for i in range(num_points):
             rnd_cluster_idx = torch.randint(low=0, high=4,size=(1,))
             center = cluster_centers[rnd_cluster_idx]
-            std_dev = 0.35
+            std_dev = 0.135
             coordinates[i] = center + torch.randn(size=(3,)) * std_dev
             point_importance[i] = 1 / np.linalg.norm(coordinates[i] - center) 
             true_clusters[i] = rnd_cluster_idx
 
         feat_mat = torch.column_stack((coordinates,point_importance))
+        edge_index = var_knn_graph(feat_mat,k=[1,3,8,16],quantiles=[0.25,0.5,0.8],x_ranking=point_importance)
 
-        # new
-        q1, q2, q3 = torch.quantile(point_importance, torch.tensor([0.25, 0.5, 0.75]))
-
-        # Create masks for each quartile
-        mask_q1 = point_importance <= q1
-        mask_q2 = (q1 < point_importance) & (point_importance <= q2)
-        mask_q3 = (q2 < point_importance) & (point_importance <= q3)
-        mask_q4 = point_importance > q3
-
-        # Extract indices for each quartile
-        indices_q1 = torch.nonzero(mask_q1, as_tuple=False).squeeze(dim=1)
-        indices_q2 = torch.nonzero(mask_q2, as_tuple=False).squeeze(dim=1)
-        indices_q3 = torch.nonzero(mask_q3, as_tuple=False).squeeze(dim=1)
-        indices_q4 = torch.nonzero(mask_q4, as_tuple=False).squeeze(dim=1)
-
-        points_q1 = coordinates[mask_q1]
-        points_q2 = coordinates[mask_q2]
-        points_q3 = coordinates[mask_q3]
-        points_q4 = coordinates[mask_q4]
-
-        tree = scipy.spatial.cKDTree(coordinates)
-
-        #variable k
-        k1,k2,k3,k4 = 3,6,9,12
-
-        distances1,indices1 = tree.query(points_q1, k=k1)
-        distances1 = torch.from_numpy(distances1).to(torch.float32)
-        col1 = torch.from_numpy(indices1).to(torch.long)
-        row1 = torch.arange(col1.size(0),dtype=torch.long).view(-1,1).repeat(1,k1)
-        mask = ~torch.isinf(distances1).view(-1).to(torch.bool)
-        row1, col1 = row1.view(-1)[mask], col1.view(-1)[mask]
-        #need to return to original indices:
-        orig_row1 = torch.gather(indices_q1,0,row1)
-        #return pairs of source,dest node indices.
-        edges_q1 = torch.stack([orig_row1, col1], dim=0)
-
-        distances2,indices2 = tree.query(points_q2, k=k2)
-        distances2 = torch.from_numpy(distances2).to(torch.float32)
-        col2 = torch.from_numpy(indices2).to(torch.long)
-        row2 = torch.arange(col2.size(0),dtype=torch.long).view(-1,1).repeat(1,k2)
-        mask = ~torch.isinf(distances2).view(-1).to(torch.bool)
-        row2, col2 = row2.view(-1)[mask], col2.view(-1)[mask]
-        #need to return to original indices:
-        orig_row2 = torch.gather(indices_q2,0,row2)
-        edges_q2 = torch.stack([orig_row2, col2], dim=0)
-
-        distances3,indices3 = tree.query(points_q3, k=k3)
-        distances3 = torch.from_numpy(distances3).to(torch.float32)
-        col3 = torch.from_numpy(indices3).to(torch.long)
-        row3 = torch.arange(col3.size(0),dtype=torch.long).view(-1,1).repeat(1,k3)
-        mask = ~torch.isinf(distances3).view(-1).to(torch.bool)
-        row3, col3 = row3.view(-1)[mask], col3.view(-1)[mask]
-        #need to return to original indices:
-        orig_row3 = torch.gather(indices_q3,0,row3)
-        edges_q3 = torch.stack([orig_row3, col3], dim=0)
-
-        distances4,indices4 = tree.query(points_q4, k=k4)
-        distances4 = torch.from_numpy(distances4).to(torch.float32)
-        col4 = torch.from_numpy(indices4).to(torch.long)
-        row4 = torch.arange(col4.size(0),dtype=torch.long).view(-1,1).repeat(1,k4)
-        mask = ~torch.isinf(distances4).view(-1).to(torch.bool)
-        row4, col4 = row4.view(-1)[mask], col4.view(-1)[mask]
-        #need to return to original indices:
-        orig_row4 = torch.gather(indices_q4,0,row4)
-        edges_q4 = torch.stack([orig_row4, col4], dim=0)
-
-
-        edges_total = torch.cat((edges_q1, edges_q2, edges_q3, edges_q4), dim=1)
-
-        # Create a PyTorch Geometric Data object
-        data = torch_geometric.data.Data(x=feat_mat[:, :3], y=true_clusters)
-        # edge_index = torch_geometric.nn.knn_graph(feat_mat[:, :3],k=3)
-
-        graph_data = torch_geometric.data.Data(x=feat_mat[:, :3],edge_index=edges_total, y=true_clusters) 
+        graph_data = torch_geometric.data.Data(x=feat_mat[:,:3],edge_index=edge_index, y=true_clusters) 
         pyg_data_list.append(graph_data)
             
     return pyg_data_list
@@ -280,7 +152,7 @@ class Net(torch.nn.Module):
     def __init__(self, 
                  in_channels,
                  out_channels,
-                 hidden_channels=32):
+                 ):
         super().__init__()
 
         self.conv1 = torch_geometric.nn.GCNConv(in_channels, 128)
@@ -290,7 +162,6 @@ class Net(torch.nn.Module):
     def forward(self, x, edge_index, batch):
         x = self.conv1(x, edge_index)
         x = self.relu(x)
-        # return F.log_softmax(x,dim=-1), 0
 
         x, mask = torch_geometric.utils.to_dense_batch(x, batch)
         adj = torch_geometric.utils.to_dense_adj(edge_index, batch)
@@ -298,10 +169,6 @@ class Net(torch.nn.Module):
 
         return F.log_softmax(x, dim=-1), sp1+o1+c1, s
 
-num_clusters = 6
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = Net(3, num_clusters).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
 def train(train_loader):
     model.train()
@@ -345,6 +212,12 @@ if __name__=='__main__':
     val_loader = torch_geometric.loader.DataLoader(val_data_list, batch_size=20)
     test_loader = torch_geometric.loader.DataLoader(test_data_list, batch_size=20)
 
+    num_clusters = 4
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = Net(train_data_list[0].x.size(1), num_clusters).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+
+
     #run training
     num_epochs = 40
     for epoch in range(1, num_epochs):
@@ -362,7 +235,7 @@ if __name__=='__main__':
 
     #evaluate using first graph
     eval_graph = test_data_list[0]
-    pred,tot_loss,clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
+    pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
 
     predicted_classes = clus_ass.squeeze().argmax(dim=1).numpy()
     unique_values, counts = np.unique(predicted_classes, return_counts=True)
@@ -372,8 +245,8 @@ if __name__=='__main__':
     ax = fig.add_subplot(121, projection='3d')
     ax.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], c='b', marker='o', label='Nodes')
     for src, dst in eval_graph.edge_index.t().tolist():
-        x_src, y_src, z_src = eval_graph.x[src]
-        x_dst, y_dst, z_dst = eval_graph.x[dst]
+        x_src, y_src, z_src = eval_graph.x[src][:3]
+        x_dst, y_dst, z_dst = eval_graph.x[dst][:3]
         
         ax.plot([x_src, x_dst], [y_src, y_dst], [z_src, z_dst], c='r')
 
