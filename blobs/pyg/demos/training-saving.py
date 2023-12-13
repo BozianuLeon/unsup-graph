@@ -83,9 +83,9 @@ def var_knn_graph(
     for i in range(len(quantile_values)+1):
         # Create masks for each quantile
         if i==0:
-            qua_mask = x_ranking<quantile_values[i]
+            qua_mask = x_ranking<=quantile_values[i]
         elif i==len(quantile_values):
-            qua_mask = x_ranking>quantile_values[i-1]
+            qua_mask = x_ranking>=quantile_values[i-1]
         else:
             qua_mask = (quantile_values[i-1]<x_ranking) & (x_ranking <= quantile_values[i])
         
@@ -104,6 +104,7 @@ def var_knn_graph(
         row = torch.gather(indices,0,row)
         # pairs of source, dest node indices
         edges_q = torch.stack([row, col], dim=0)
+        # edges_q = torch.stack([col,row], dim=0)
         edges_list = torch.cat([edges_list,edges_q],dim=1)
 
     return edges_list
