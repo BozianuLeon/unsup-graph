@@ -1,4 +1,7 @@
 blobs/plots/*
 blobs/models/*
+real/models/
+real/datasets/
+real/plots/
 *.pth
 .DS_Store
