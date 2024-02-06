@@ -55,6 +55,130 @@ for i in range(len(inference)):
             h5group = f["caloCells"]
             cells = h5group["2d"][event_no]
 
+        cells_r = np.sqrt(cells['cell_yCells']**2+cells['cell_xCells']**2)
+        plt.figure(figsize=(14,8))
+        n,bins,_=plt.hist(cells_r,bins=1000,histtype='step')
+        plt.xlabel('r')
+        plt.title(f'All cells radius ({len(cells_r)})')
+        plt.savefig(f'../plots/cells/logradius_hist.png')
+        print(np.unique(cells['cell_DetCells']))
+        print(len(np.unique(cells['cell_DetCells'])))
+        
+
+        # split into subdetectors
+        EM_layers = [65,81,97,113,  #EM barrel
+                    257,273,289,305, #EM Endcap
+                    145,161, # IW EM (inner wheel)
+                    2052] #EM FCAL
+
+        HAD_layers = [2,514,1026,1538, #HEC layers
+                     4100,6148, #FCAL HAD
+                     65544,73736,81928, #Tile barrel
+                     131080,139272,147464, #Tile endcap
+                     811016,278536,270344] #Tile gap
+        
+        EM_indices = np.isin(cells['cell_DetCells'],EM_layers)
+        HAD_indices = np.isin(cells['cell_DetCells'],HAD_layers)
+        EMBar_indices = np.isin(cells['cell_DetCells'],[65,81,97,113])
+        EMEC_indices = np.isin(cells['cell_DetCells'],[257,273,289,305])
+        EMIW_indices = np.isin(cells['cell_DetCells'],[145,161])
+        EMFCAL_indices = np.isin(cells['cell_DetCells'],[2052])
+
+        HEC_indices = np.isin(cells['cell_DetCells'],[2,514,1026,1538])
+        HFCAL_indices = np.isin(cells['cell_DetCells'],[4100,6148])
+        TileBar_indices = np.isin(cells['cell_DetCells'],[65544,73736,81928])
+        TileEC_indices = np.isin(cells['cell_DetCells'],[131080,139272,147464])
+        TileGap_indices = np.isin(cells['cell_DetCells'],[811016,278536,270344])
+
+        plt.figure(figsize=(14,8))
+        plt.hist(cells_r[EM_indices],bins=bins,histtype='step',label='EM')
+        plt.hist(cells_r[HAD_indices],bins=bins,histtype='step',label='HAD')
+        plt.xlabel('r')
+        plt.legend()
+        # plt.yscale('log')
+        plt.title(f'All cells radius ({len(cells_r[EM_indices]),len(cells_r[HAD_indices])})')
+        plt.savefig(f'../plots/cells/radius_EMHAD_hist.png')
+
+        plt.figure(figsize=(14,8))
+        plt.hist(cells_r[EMBar_indices],bins=bins,histtype='step',label='EMBar')
+        plt.hist(cells_r[EMEC_indices],bins=bins,histtype='step',label='EMEC')
+        plt.hist(cells_r[EMIW_indices],bins=bins,histtype='step',label='EMIW')
+        plt.hist(cells_r[EMFCAL_indices],bins=bins,histtype='step',label='EMFCAL')
+        plt.hist(cells_r[HEC_indices],bins=bins,histtype='step',label='HEC')
+        plt.hist(cells_r[HFCAL_indices],bins=bins,histtype='step',label='HFCAL')
+        plt.hist(cells_r[TileBar_indices],bins=bins,histtype='step',label='TileBar')
+        plt.hist(cells_r[TileEC_indices],bins=bins,histtype='step',label='TileEC')
+        plt.hist(cells_r[TileGap_indices],bins=bins,histtype='step',label='TileGap')
+        # plt.axvline(x=250,color='red',label='Buckets')
+        # plt.axvline(x=325,color='red')
+        # plt.axvline(x=615,color='red')
+        # plt.axvline(x=1450,color='red')
+        # plt.axvline(x=1650,color='red')
+        # plt.axvline(x=1775,color='red')
+        # plt.axvline(x=2150,color='red')
+        # plt.axvline(x=2500,color='red')
+        # plt.axvline(x=3000,color='red')
+        # plt.axvline(x=3250,color='red')
+        # plt.axvline(x=3500,color='red')
+        plt.xlabel('r')
+        plt.legend()
+        plt.yscale('log')
+        plt.title(f'All cells radius ({len(cells_r[EM_indices]),len(cells_r[HAD_indices])})')
+        plt.savefig(f'../plots/cells/radius_EMHADLayers_hist_log.png')
+
+
+
+        plt.figure(figsize=(14,8))
+        f,ax = plt.subplots(8,1,figsize=(14,15))
+        #EM Cells
+        ax[0].hist(cells_r[cells['cell_DetCells']==65],bins=bins,histtype='step',label='PreSamplerB (65)')
+        ax[0].hist(cells_r[cells['cell_DetCells']==81],bins=bins,histtype='step',label='EMB1 (81)')
+        ax[0].hist(cells_r[cells['cell_DetCells']==97],bins=bins,histtype='step',label='EMB2 (97)')
+        ax[0].hist(cells_r[cells['cell_DetCells']==113],bins=bins,histtype='step',label='EMB3 (113)')
+
+        ax[4].hist(cells_r[cells['cell_DetCells']==257],bins=bins,histtype='step',label='PresamplerE (257)')
+        ax[4].hist(cells_r[cells['cell_DetCells']==273],bins=bins,histtype='step',label='EME1 (273)')
+
+        ax[5].hist(cells_r[cells['cell_DetCells']==145],bins=bins,histtype='step',label='EME2 (IW) (145)')
+        ax[5].hist(cells_r[cells['cell_DetCells']==161],bins=bins,histtype='step',label='EME3 (IW) (161)')
+        ax[5].hist(cells_r[cells['cell_DetCells']==289],bins=bins,histtype='step',label='EME2 (289)')
+        ax[5].hist(cells_r[cells['cell_DetCells']==305],bins=bins,histtype='step',label='EME3 (305)')
+
+        #Hadronic cells
+        ax[1].hist(cells_r[cells['cell_DetCells']==65544],bins=bins,histtype='step',label='TileBar0 (65544)')
+        ax[1].hist(cells_r[cells['cell_DetCells']==73736],bins=bins,histtype='step',label='TileBar1 (73736)')
+        ax[1].hist(cells_r[cells['cell_DetCells']==81928],bins=bins,histtype='step',label='TileBar2 (81928)')
+
+        ax[2].hist(cells_r[cells['cell_DetCells']==131080],bins=bins,histtype='step',label='TileExt0 (131080)')
+        ax[2].hist(cells_r[cells['cell_DetCells']==139272],bins=bins,histtype='step',label='TileExt1 (139272)')
+        ax[2].hist(cells_r[cells['cell_DetCells']==147464],bins=bins,histtype='step',label='TileExt2 (147464)')
+
+        ax[3].hist(cells_r[cells['cell_DetCells']==270344],bins=bins,histtype='step',label='TileGap1 (270344)')
+        ax[3].hist(cells_r[cells['cell_DetCells']==278536],bins=bins,histtype='step',label='TileGap2 (278536)')
+        ax[3].hist(cells_r[cells['cell_DetCells']==811016],bins=bins,histtype='step',label='TileGap3 (811016)')
+
+        ax[6].hist(cells_r[cells['cell_DetCells']==2],bins=bins,histtype='step',label='HEC0 (2)')
+        ax[6].hist(cells_r[cells['cell_DetCells']==514],bins=bins,histtype='step',label='HEC1 (514)')
+        ax[6].hist(cells_r[cells['cell_DetCells']==1026],bins=bins,histtype='step',label='HEC2 (1026)')
+        ax[6].hist(cells_r[cells['cell_DetCells']==1538],bins=bins,histtype='step',label='HEC3 (1538)')
+
+        ax[7].hist(cells_r[cells['cell_DetCells']==2052],bins=bins,histtype='step',label='FCAL0 (EM) (2052)')
+        ax[7].hist(cells_r[cells['cell_DetCells']==4100],bins=bins,histtype='step',label='FCAL1 (HAD) (4100)')
+        ax[7].hist(cells_r[cells['cell_DetCells']==6148],bins=bins,histtype='step',label='FCAL2 (HAD) (6148)')
+        
+
+        for a in range(len(ax)):
+            ax[a].legend(fontsize='x-small')
+            # ax[a].set(ylabel='Freq.',yscale='log')
+        ax[7].set(xlabel='cell_r',)
+        # plt.yscale('log')
+        plt.xlabel('cell_r')
+        ax[0].set_title(f'Barrel cells')
+        ax[4].set_title(f'Endcap cells')
+        f.subplots_adjust(hspace=0.7)
+        plt.savefig(f'../plots/cells/logradius_individual_hist.png',bbox_inches="tight")
+        quit()
+
         clusters_file = "../../../user.cantel.34126190._0000{}.topoclusterD3PD_mc16_JZ4W.r10788.h5".format(h5f.decode('utf-8'))
         with h5py.File(clusters_file,"r") as f:
             cl_data = f["caloCells"] 

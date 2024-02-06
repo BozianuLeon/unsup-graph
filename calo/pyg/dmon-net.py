@@ -71,7 +71,7 @@ if __name__=='__main__':
 
 
     #load data from pipeline lists
-    with open('../data/lists/truth_box_graphs.pkl', 'rb') as f:
+    with open('../data/lists/truth_box_graphs_knn.pkl', 'rb') as f:
        data_list = pickle.load(f)
     print(len(data_list))
     print(data_list[0])
@@ -97,23 +97,21 @@ if __name__=='__main__':
     test_loader = torch_geometric.loader.DataLoader(data_list[train_size:], batch_size=20)
     print(train_size,len(data_list),len(train_loader.dataset))
     #run training
-    num_epochs = 1#5
+    num_epochs = 5
     for epoch in range(1, num_epochs):
         start = time.perf_counter()
         train_loss = train(train_loader)
         train_loss2 = test(train_loader)
         test_loss = test(test_loader)
-        timing = 0
         print(f"Epoch: {epoch:03d}, Train Loss: {train_loss:.3f}, Train Loss2: {train_loss2:.3f}, Test Loss: {test_loss:.3f}, Time: {time.perf_counter() - start:.3f}s")
 
     model_name = f"dmon_{num_epochs}e_{num_clusters}clus"
     if os.path.exists(f"./models/") is False: os.makedirs(f"./models/") 
     torch.save(model.state_dict(), f"models/{model_name}.pth")
 
-
-    #evaluate using first graph
-    # eval_graph = data_list[train_size+1]
-    eval_graph = data_list[0]
+    ######################################################################################
+    # Evaluate using first graph
+    eval_graph = data_list[train_size+1]
     pred,tot_loss,clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
 
     predicted_classes = clus_ass.squeeze().argmax(dim=1).numpy()
@@ -126,14 +124,16 @@ if __name__=='__main__':
     labels = [f"{value}: ({count})" for value,count in zip(unique_values, counts)]
     ax.legend(handles=scatter.legend_elements(num=None)[0],labels=labels,title=f"Classes {len(unique_values)}/{num_clusters}",bbox_to_anchor=(1.07, 0.25),loc='lower left')
     ax.set(xlabel='X',ylabel='Z',zlabel='Y',title=f'Graph with KNN Edges')
-    fig.savefig(f'../plots/results/synthetic_data_dmon_{num_clusters}clus.png', bbox_inches="tight")
+    # fig.savefig(f'../plots/results/calo_data_dmon_{num_clusters}clus.png', bbox_inches="tight")
+    plt.show()
     print()
     for value, count in zip(unique_values, counts):
         print(f"Cluster {value}: {count} occurrences")
 
 
 
-
+    ######################################################################################
+    #Triple plot
 
     figure = plt.figure(figsize=(14, 8))
     # 1. input graph
@@ -154,10 +154,8 @@ if __name__=='__main__':
     # load data from pipeline lists
     with open('../data/lists/clusters_list.pkl', 'rb') as f:
        cluster_list = pickle.load(f)
-    cluster_list = cluster_list[:1000]
     print(len(cluster_list),len(data_list))
-    # clusters_in_question = cluster_list[train_size+1]
-    clusters_in_question = cluster_list[0]
+    clusters_in_question = cluster_list[train_size+1]
 
     ax3 = figure.add_subplot(133, projection='3d')
     ax3.set(xlim=ax1.get_xlim(),ylim=ax1.get_ylim(),zlim=ax1.get_zlim())
@@ -167,4 +165,5 @@ if __name__=='__main__':
     ax1.set(xlabel='X',ylabel='Z',zlabel='Y',title=f'Model Input Graph variable KNN Edges')
     ax2.set(xlabel='X',ylabel='Z',zlabel='Y',title=f'Model Output Cluster Assignments')
     ax3.set(xlabel='X',ylabel='Z',zlabel='Y',title=f'Real Topocluster(s)')
-    figure.savefig(f'../plots/results/dmon_{num_clusters}clus.png', bbox_inches="tight")
+    # figure.savefig(f'../plots/results/dmon_{num_clusters}clus.png', bbox_inches="tight")
+    plt.show()

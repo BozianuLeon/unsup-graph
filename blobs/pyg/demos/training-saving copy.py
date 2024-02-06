@@ -1,8 +1,6 @@
-import matplotlib
-from matplotlib import pyplot as plt
 import numpy as np
 import scipy
-import os
+import time
 
 import torch
 from torch.nn import Linear
@@ -10,6 +8,7 @@ import torch.nn.functional as F
 import torch_geometric
 from torch_geometric.loader import DataLoader
 from torch_geometric.nn import DMoNPooling, GCNConv
+
 
 
 def knn_graph(
@@ -46,19 +45,16 @@ def knn_graph(
 
     return torch.stack([row, col], dim=0)
 
-
 def var_knn_graph(
         x,
         k,
         quantiles,
         x_ranking,
         batch=None,
-        loop=False,
 ):
     # Finds for each element in x the k nearest points in x-space
     # k changes depending on the importance of the node as defined in 
     # x_ranking tensor
-    # https://github.com/rusty1s/pytorch_cluster/blob/master/torch_cluster/knn.py
     
     if batch is None:
         batch = x.new_zeros(x.size(0), dtype=torch.long)
@@ -106,18 +102,13 @@ def var_knn_graph(
         row, col = row.view(-1)[mask], col.view(-1)[mask]
         # Return to original indices
         row = torch.gather(indices,0,row)
-
-        if not loop:
-            mask = row != col
-            row,col = row[mask], col[mask]
-
         # pairs of source, dest node indices
         edges_q = torch.stack([row, col], dim=0)
         # edges_q = torch.stack([col,row], dim=0)
-
         edges_list = torch.cat([edges_list,edges_q],dim=1)
 
     return edges_list
+
 
 
 
@@ -126,7 +117,8 @@ def make_data_list(num_graphs,sigma,avg_num_nodes=250,ks=[3,3,3,3]):
     # Generate the synthetic data
     pyg_data_list = []
     for j in range(num_graphs):
-        num_points = int(torch.normal(mean=avg_num_nodes,std=torch.tensor(avg_num_nodes/100)))
+        num_points = int(torch.normal(mean=avg_num_nodes,std=torch.tensor(avg_num_nodes/10)))
+        
         cluster_centers = torch.tensor([[2.0, 2.0, 2.0],
                                         [3.0, 3.0, 3.0],
                                         [2.0, 3.0, 2.0],
@@ -141,22 +133,14 @@ def make_data_list(num_graphs,sigma,avg_num_nodes=250,ks=[3,3,3,3]):
             center = cluster_centers[rnd_cluster_idx]
             std_dev = sigma
             coordinates[i] = center + torch.randn(size=(3,)) * std_dev
-            point_importance[i] = 1 / np.sqrt(np.linalg.norm(coordinates[i] - center))
+            point_importance[i] = 1 / np.sqrt(np.linalg.norm(coordinates[i] - center)) 
             true_clusters[i] = rnd_cluster_idx
 
         feat_mat = torch.column_stack((coordinates,point_importance))
-        # edge_index = var_knn_graph(feat_mat[:,:3],k=ks,quantiles=[0.25,0.5,0.8],x_ranking=point_importance)
-        # sorted_values, indices = torch.sort(edge_index[1])
-        # sorted_corresponding_tensor = edge_index[0][indices]
-        # print(torch.stack((sorted_corresponding_tensor,sorted_values),dim=0))
-        # print(edge_index.shape)
-        # print()
-        edge_index = torch_geometric.nn.knn_graph(feat_mat[:, :3],k=3,loop=True)
-        # print(edge_index)
-        # print(edge_index.shape)
-        # quit()
-        graph_data = torch_geometric.data.Data(x=feat_mat[:,:3],edge_index=edge_index, y=true_clusters)
-        
+        edge_index = var_knn_graph(feat_mat[:,:3],k=ks,quantiles=[0.25,0.5,0.8],x_ranking=point_importance)
+        # edge_index2 = torch_geometric.nn.knn_graph(feat_mat[:, :3],k=3,loop=True)
+
+        graph_data = torch_geometric.data.Data(x=feat_mat,edge_index=edge_index, y=true_clusters) 
         pyg_data_list.append(graph_data)
             
     return pyg_data_list
@@ -185,59 +169,68 @@ class Net(torch.nn.Module):
         return F.log_softmax(x, dim=-1), sp1+o1+c1, s
 
 
+def train(train_loader):
+    model.train()
+    loss_all = 0
+
+    for data in train_loader:
+        data = data.to(device)
+        optimizer.zero_grad()
+        out, tot_loss, _ = model(data.x, data.edge_index, data.batch)
+        loss = tot_loss #+ F.nll_loss(out, data.y.view(-1))
+        loss.backward()
+        loss_all += data.y.size(0) * float(loss)
+        optimizer.step()
+    return loss_all / len(train_data_list)
+
+
+@torch.no_grad()
+def test(loader):
+    model.eval()
+    loss_all = 0
+
+    for data in loader:
+        data = data.to(device)
+        pred, tot_loss, _ = model(data.x, data.edge_index, data.batch)
+        loss = tot_loss # + F.nll_loss(pred, data.y.view(-1))
+        loss_all += data.y.size(0) * float(loss)
+
+    return loss_all / len(loader.dataset)
 
 
 
 
 if __name__=='__main__':
     avg_num_nodes = 250
-    #CONFIGS:
-    sigma = 0.6
+    sigma = 0.12
     ks = [3,3,3,3]
-    num_clusters = 4
-    saved_model = f"dmon_sig12_xyz_k3333_4clus_40e"
-
+   
     #generate data and put into pytorch geometric dataloaders
     train_data_list = make_data_list(1000,sigma=sigma,ks=ks)
     val_data_list = make_data_list(200,sigma=sigma,ks=ks)
     test_data_list = make_data_list(100,sigma=sigma,ks=ks)
 
-    # train_loader = torch_geometric.loader.DataLoader(train_data_list, batch_size=20)
+    train_loader = torch_geometric.loader.DataLoader(train_data_list, batch_size=20)
     val_loader = torch_geometric.loader.DataLoader(val_data_list, batch_size=20)
     test_loader = torch_geometric.loader.DataLoader(test_data_list, batch_size=20)
 
+    num_clusters = 4
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = Net(train_data_list[0].x.size(1), num_clusters).to(device)
-    model.load_state_dict(torch.load(saved_model+".pth"))
-    model.eval()
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
-    
-    #evaluate using first graph
-    eval_graph = test_data_list[0]
-    pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
 
-    predicted_classes = clus_ass.squeeze().argmax(dim=1).numpy()
-    unique_values, counts = np.unique(predicted_classes, return_counts=True)
+    #run training
+    num_epochs = 40
+    for epoch in range(1, num_epochs):
+        start = time.perf_counter()
+        train_loss = train(train_loader)
+        train_loss2 = test(train_loader)
+        val_loss = test(val_loader)
+        test_loss = test(test_loader)
+        timing = 0
+        print(f"Epoch: {epoch:03d}, Train Loss: {train_loss:.3f}, Train Loss2: {train_loss2:.3f}, Val Loss: {val_loss:.3f}, Test Loss: {test_loss:.3f}, Time: {time.perf_counter() - start:.3f}s")
 
-    if os.path.exists(f"../plots/results/") is False: os.makedirs(f"../plots/results/")
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(121, projection='3d')
-    ax.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], c='b', marker='o', label='Nodes')
-    for src, dst in eval_graph.edge_index.t().tolist():
-        x_src, y_src, z_src = eval_graph.x[src][:3]
-        x_dst, y_dst, z_dst = eval_graph.x[dst][:3]
-        
-        ax.plot([x_src, x_dst], [y_src, y_dst], [z_src, z_dst], c='r')
-
-    ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Input Graph with var KNN Edges')
-
-    ax2 = fig.add_subplot(122, projection='3d')
-    scatter = ax2.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], c=predicted_classes, marker='o')
-    labels = [f"{value}: ({count})" for value,count in zip(unique_values, counts)]
-    ax2.legend(handles=scatter.legend_elements(num=None)[0],labels=labels,title=f"Classes {len(unique_values)}/{num_clusters}",bbox_to_anchor=(1.07, 0.25),loc='lower left')
-    ax2.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Model Output')
-    # fig.savefig(f'../plots/results/synthetic_data_var_knn_dmon_{num_clusters}clus.png', bbox_inches="tight")
-    plt.show()
-    print()
-    for value, count in zip(unique_values, counts):
-        print(f"Cluster {value}: {count} occurrences")
+    k_name = "".join(str(element) for element in ks)
+    model_name = f"dmon_sig{int(100*sigma)}_xyzsqrtE_k{k_name}_{num_clusters}clus_{num_epochs}e"
+    torch.save(model.state_dict(), f"{model_name}.pth")

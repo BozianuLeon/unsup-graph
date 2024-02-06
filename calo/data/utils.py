@@ -86,7 +86,7 @@ def RetrieveCellIdsFromBox(cells,boxes):
             y_cond = np.logical_and.reduce((cells['cell_phi']>=phi_min, cells['cell_phi']<=phi_max)) #multiple conditions #could use np.all(x,axis)
         
         tot_cond = np.logical_and(x_condition,y_cond)
-        cells_here = cells[np.where(tot_cond)][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
+        cells_here = cells[np.where(tot_cond)][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_DetCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
         if len(cells_here):
             list_containing_all_cells.append(cells_here)
         else:
@@ -114,7 +114,7 @@ def RetrieveCellIdsFromCluster(cells,cluster_cell_info):
     list_containing_all_cells = []
     for cluster in range(len(cluster_cell_info)):
         cell_mask = np.isin(cells['cell_IdCells'],cluster_cell_info[cluster]['cl_cell_IdCells'])
-        desired_cells = cells[cell_mask][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
+        desired_cells = cells[cell_mask][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_DetCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
         list_containing_all_cells.append(desired_cells)
     # return desired_cells
     return list_containing_all_cells
@@ -138,11 +138,45 @@ def RetrieveClusterCellsFromBox(cluster_d, cluster_cell_d, cells_this_event, box
                 y_mean_circ = circular_mean(cluster_cells['cell_phi'])
                 if (truth_box[1] <= y_mean_circ <= truth_box[3]) or (truth_box[1] <= (y_mean_circ + (-1*np.sign(y_mean_circ))*2*np.pi) <= truth_box[3]):
                     cell_mask = np.isin(cells_this_event['cell_IdCells'],cluster_cell_d[cl_no]['cl_cell_IdCells'])
-                    desired_cells = cells_this_event[cell_mask][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
+                    desired_cells = cells_this_event[cell_mask][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_DetCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
                     clusters_this_box.append(desired_cells)
         list_cl_cells.append(clusters_this_box)
         
     return list_truth_cells, list_cl_cells
+
+
+value_mapping = {65: 0, 
+                    81: 1, 
+                    97: 2, 
+                    113: 3, 
+                    65544: 4, 
+                    73736: 5, 
+                    81928: 6, 
+                    270344: 7, 
+                    278536: 8, 
+                    811016: 9, 
+                    131080: 10, 
+                    139272: 11,
+                    147464: 12,
+                    257: 13,
+                    273: 14,
+                    145: 15,
+                    289: 16,
+                    161: 17,
+                    305: 18,
+                    2: 19,
+                    514: 20,
+                    1026: 21,
+                    1538: 22,
+                    2052: 23,
+                    4100: 24,
+                    6148: 25
+                    }
+
+def encode_layers(value):
+    return value_mapping.get(value, 0) 
+# vectorized_mapping = np.vectorize(encode_layers)
+
 
     
 
@@ -217,3 +251,71 @@ def quartile_variable_knn(feature_matrix,point_importance):
     edges_total = torch.cat((edges_q1, edges_q2, edges_q3, edges_q4), dim=1)
 
     return edges_total
+
+
+
+
+
+def var_knn_graph(
+        x,
+        k,
+        quantiles,
+        x_ranking,
+        batch=None,
+):
+    # Finds for each element in x the k nearest points in x-space
+    # k changes depending on the importance of the node as defined in 
+    # x_ranking tensor
+    
+    if batch is None:
+        batch = x.new_zeros(x.size(0), dtype=torch.long)
+
+
+    x = x.view(-1, 1) if x.dim() == 1 else x
+    assert x.dim() == 2 and batch.dim() == 1
+    assert x.size(0) == batch.size(0)
+    assert len(k) == len(quantiles)+1, "There should be a k value for each quantile interval"
+
+    # Rescale x and y.
+    def normalize(x):
+        x_normed = x - x.min(0,keepdim=True)[0]
+        x_normed = x_normed / x_normed.max(0, keepdim=True)[0]
+        return x_normed 
+    x = normalize(x)
+
+    # Concat batch/features to ensure no cross-links between examples exist.
+    x = torch.cat([x, 2 * x.size(1) * batch.view(-1, 1).to(x.dtype)], dim=-1)
+
+    # Pre-calculate KNN tree
+    tree = scipy.spatial.cKDTree(x.detach()) 
+
+    quantile_values = torch.quantile(x_ranking, torch.tensor(quantiles))
+    edges_list = torch.tensor([[],[]],dtype=torch.int64)
+    for i in range(len(quantile_values)+1):
+        # Create masks for each quantile
+        if i==0:
+            qua_mask = x_ranking<=quantile_values[i]
+        elif i==len(quantile_values):
+            qua_mask = x_ranking>=quantile_values[i-1]
+        else:
+            qua_mask = (quantile_values[i-1]<x_ranking) & (x_ranking <= quantile_values[i])
+        
+        # Extract indices for each quantile
+        indices = torch.nonzero(qua_mask, as_tuple=False).squeeze()
+        qua_mask = qua_mask.squeeze()
+        nodes_q = x[qua_mask]
+
+        dist, col = tree.query(nodes_q.detach(),k=k[i],distance_upper_bound=x.size(1)) 
+        dist = torch.from_numpy(dist).to(x.dtype)
+        col = torch.from_numpy(col).to(torch.long)
+        row = torch.arange(col.size(0), dtype=torch.long).view(-1, 1).repeat(1, k[i])
+        mask = torch.logical_not(torch.isinf(dist).view(-1))
+        row, col = row.view(-1)[mask], col.view(-1)[mask]
+        # Return to original indices
+        row = torch.gather(indices,0,row)
+        # pairs of source, dest node indices
+        edges_q = torch.stack([row, col], dim=0)
+        # edges_q = torch.stack([col,row], dim=0)
+        edges_list = torch.cat([edges_list,edges_q],dim=1)
+
+    return edges_list
