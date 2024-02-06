@@ -1,9 +1,4 @@
 blobs/plots/*
 blobs/models/*
-calo/plots/*
-calo/pyg/demos/plots/*
-calo/pyg/models/*
-calo/data/lists/*
-calo/data/__pycache__/*
 *.pth
 .DS_Store
