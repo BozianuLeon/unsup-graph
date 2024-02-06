@@ -351,7 +351,7 @@ if __name__=='__main__':
                             gnn_desired_cells = cells[cell_mask][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_DetCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
                             gnn_cluster_cells_i.append(gnn_desired_cells)
                             list_gnn_cells.append(gnn_desired_cells)
-                        print('\t',len(gnn_cluster_cells_i), 'there were', len(cluster_cells_i), 'TCs', len(coordinates), 'cells')
+                        print('\t',len(gnn_cluster_cells_i), 'GNN clusters there were', len(cluster_cells_i), 'TCs', len(coordinates), 'cells')
                     
                     # Get boxes that are too small (<50 2sig cells)
                     else:
@@ -373,10 +373,42 @@ if __name__=='__main__':
 
             print(list_topo_cells[0].dtype)
             tc_phys_dict = get_physics_dictionary(list_topo_cells)
+            tb_phys_dict = get_physics_dictionary(list_truth_cells)
             gcl_phys_dict = get_physics_dictionary(list_gnn_cells)
-            print(tc_phys_dict['energy'])
-            print()
-            print(gcl_phys_dict['energy'])
+
+
+            # project in eta-phi
+            f,ax = plt.subplots(1,2,figsize=(10,5))
+            for t in tees:
+                ax[0].add_patch(matplotlib.patches.Rectangle((t[0],t[1]),t[2]-t[0],t[3]-t[1],lw=1.25,ec='green',fc='none'))
+
+            ax[0].scatter(tc_phys_dict['eta'],tc_phys_dict['phi'],marker='*',color='dodgerblue',s=12,label='Topocl>5GeV')
+            ax[1].scatter(gcl_phys_dict['eta'],gcl_phys_dict['phi'],marker='*',color='firebrick',s=12,label='GNN Clus.')
+
+            ax[0].grid()
+            ax[1].grid()
+            ax[0].set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),title=f'Event {i}, {len(tc_phys_dict["eta"])},{len(list_topo_cells)} Topocluster(s)')
+            ax[1].set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),title=f'Event {i}, {len(gcl_phys_dict["eta"])},{len(list_gnn_cells)} GNN Clusters')
+            ax[0].legend(bbox_to_anchor=(1.01, 0.25),loc='lower left',fontsize='x-small')
+            ax[1].legend(bbox_to_anchor=(1.01, 0.25),loc='lower left',fontsize='x-small')
+            f.tight_layout()
+            plt.show()
+            plt.close()
+
+            f,ax = plt.subplots(1,3,figsize=(15,5))
+            for t in tees:
+                ax[0].add_patch(matplotlib.patches.Rectangle((t[0],t[1]),t[2]-t[0],t[3]-t[1],lw=1.25,ec='green',fc='none'))
+
+            ax[0].scatter(tc_phys_dict['eta'],tc_phys_dict['phi'],marker='*',color='dodgerblue',s=np.abs(tc_phys_dict['significance']),label='Topocl>5GeV')
+            ax[1].scatter(gcl_phys_dict['eta'],gcl_phys_dict['phi'],marker='*',color='firebrick',s=np.abs(gcl_phys_dict['significance']),label='GNN Clus.')
+            ax[2].scatter(tb_phys_dict['eta'],tb_phys_dict['phi'],marker='*',color='green',s=np.abs(tb_phys_dict['significance']),label='TBoxes')
+            for ax_i in ax:
+                ax_i.grid()
+                ax_i.set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI))
+                ax_i.legend(bbox_to_anchor=(1.01, 0.25),loc='lower left',fontsize='x-small')
+            f.tight_layout()
+            plt.show()
+            plt.close()
             quit()
 
 

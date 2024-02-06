@@ -28,11 +28,9 @@ def CalculateEnergyFromCells(desired_cells):
     # Outputs
     # total energy,  for this collection of cells
     
-    if desired_cells is None:
+    if (desired_cells is None) or len(desired_cells)==0:
         return np.nan
     return sum(desired_cells['cell_E']) 
-
-
 
 def CalculateEtaFromCells(desired_cells):
     # Inputs
@@ -40,7 +38,7 @@ def CalculateEtaFromCells(desired_cells):
     # Outputs
     # eta, (absolute) energy weighted value
     
-    if desired_cells is None:
+    if (desired_cells is None) or len(desired_cells)==0:
         return np.nan    
     energy_weighted_eta = np.dot(desired_cells['cell_eta'],np.abs(desired_cells['cell_E'])) / sum(np.abs(desired_cells['cell_E']))
     return energy_weighted_eta 
@@ -126,7 +124,7 @@ def CalculateMaxEnergyFracFromCells(desired_cells):
     # Outputs
     # fraction of total energy in one cell
     
-    if desired_cells is None:
+    if (desired_cells is None) or (len(desired_cells)==0):
         return np.nan
     total_energy = sum(desired_cells['cell_E'])
     return abs(max(desired_cells['cell_E'])) / total_energy 
