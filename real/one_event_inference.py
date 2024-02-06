@@ -8,8 +8,9 @@ import matplotlib
 import h5py
 import os
 import time
-import pickle
-import random
+
+
+from metrics import get_physics_dictionary
 
 MIN_CELLS_PHI,MAX_CELLS_PHI = -3.1334076, 3.134037
 MIN_CELLS_ETA,MAX_CELLS_ETA = -4.823496, 4.823496
@@ -202,6 +203,9 @@ def perpendicular_dists(points, mean_point, b=torch.tensor([0.0,0.0,0.0])):
 
 
 
+
+
+
 if __name__=='__main__':
 
     # # Get data
@@ -368,7 +372,11 @@ if __name__=='__main__':
             print('\n\n\n')
 
             print(list_topo_cells[0].dtype)
-            print(list_gnn_cells[0].dtype)
+            tc_phys_dict = get_physics_dictionary(list_topo_cells)
+            gcl_phys_dict = get_physics_dictionary(list_gnn_cells)
+            print(tc_phys_dict['energy'])
+            print()
+            print(gcl_phys_dict['energy'])
             quit()
 
 
