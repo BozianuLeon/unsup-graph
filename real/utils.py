@@ -35,6 +35,11 @@ def wrap_check_truth(boxes,ymin,ymax):
     return boxes[np.where(suppress==0)]
 
 
+def remove_nan(array):
+    #find the indices where there are not nan values
+    good_indices = np.where(array==array) 
+    return array[good_indices]
+
 
 def circular_mean(phi_values):
     """

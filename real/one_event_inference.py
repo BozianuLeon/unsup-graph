@@ -9,7 +9,7 @@ import h5py
 import os
 import time
 
-from utils import wrap_check_truth, perpendicular_dists, RetrieveCellIdsFromCluster, RetrieveClusterCellsFromBox
+from utils import wrap_check_truth, remove_nan, perpendicular_dists, RetrieveCellIdsFromCluster, RetrieveClusterCellsFromBox
 from metrics import get_physics_dictionary
 
 MIN_CELLS_PHI,MAX_CELLS_PHI = -3.1334076, 3.134037
@@ -132,6 +132,12 @@ if __name__=='__main__':
                 cluster_data = cluster_data[raw_E_mask]
                 cluster_cell_data = cl_data["3d"][event_no]
                 cluster_cell_data = cluster_cell_data[raw_E_mask]
+        
+            jets_file = "../../user.cantel.34126190._0000{}.jetD3PD_mc16_JZ4W.r10788.h5".format(h5f.decode('utf-8'))
+            with h5py.File(jets_file,"r") as f:
+                j_data = f["caloCells"]
+                jet_data = j_data["2d"][event_no]
+                jet_data = remove_nan(jet_data)
 
             ##----------------------------------------------------------------------------------------
             # Take truth boxes, return GNN clusters:
