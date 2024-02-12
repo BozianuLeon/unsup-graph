@@ -8,8 +8,9 @@ import matplotlib
 import h5py
 import os
 import time
+import fastjet
 
-from utils import wrap_check_truth, remove_nan, perpendicular_dists, RetrieveCellIdsFromCluster, RetrieveClusterCellsFromBox
+from utils import wrap_check_truth, transform_angle, remove_nan, perpendicular_dists, RetrieveCellIdsFromCluster, RetrieveClusterCellsFromBox
 from metrics import get_physics_dictionary
 
 MIN_CELLS_PHI,MAX_CELLS_PHI = -3.1334076, 3.134037
@@ -48,6 +49,9 @@ class Net(torch.nn.Module):
 
 
 if __name__=='__main__':
+
+    # Define jet reco algorithm
+    jetdef = fastjet.JetDefinition(fastjet.antikt_algorithm, 0.4)
 
     # # Get data
     with open("../../struc_array.npy", "rb") as file:
@@ -218,7 +222,7 @@ if __name__=='__main__':
             print('Number of GNN clusters',len(list_gnn_cells))
             print('\n\n\n')
             ##----------------------------------------------------------------------------------------
-
+            # Plotting 1.
             tc_phys_dict = get_physics_dictionary(list_topo_cells)
             tb_phys_dict = get_physics_dictionary(list_truth_cells)
             gcl_phys_dict = get_physics_dictionary(list_gnn_cells)
@@ -228,39 +232,177 @@ if __name__=='__main__':
             f,ax = plt.subplots(1,2,figsize=(10,5))
             for t in tees:
                 ax[0].add_patch(matplotlib.patches.Rectangle((t[0],t[1]),t[2]-t[0],t[3]-t[1],lw=1.25,ec='green',fc='none'))
+                ax[1].add_patch(matplotlib.patches.Rectangle((t[0],t[1]),t[2]-t[0],t[3]-t[1],lw=1.25,ec='green',fc='none'))
 
-            ax[0].scatter(tc_phys_dict['eta'],tc_phys_dict['phi'],marker='*',color='dodgerblue',s=12,label='Topocl>5GeV')
-            ax[1].scatter(gcl_phys_dict['eta'],gcl_phys_dict['phi'],marker='*',color='firebrick',s=12,label='GNN Clus.')
+            ax[0].scatter(tc_phys_dict['eta'],tc_phys_dict['phi'],marker='x',color='dodgerblue',s=20,label='Topocl>5GeV')
+            ax[1].scatter(gcl_phys_dict['eta'],gcl_phys_dict['phi'],marker='2',color='firebrick',s=20,label='GNN Clus.')
 
             ax[0].grid()
             ax[1].grid()
-            ax[0].set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),title=f'Event {i}, {len(tc_phys_dict["eta"])},{len(list_topo_cells)} Topocluster(s)')
-            ax[1].set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),title=f'Event {i}, {len(gcl_phys_dict["eta"])},{len(list_gnn_cells)} GNN Clusters')
+            ax[0].set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),title=f'Event {i}, {len(tc_phys_dict["eta"])},{len(list_topo_cells)} Topocluster(s)',xlabel=f'$\eta$',ylabel=f'$\phi$')
+            ax[1].set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),title=f'Event {i}, {len(gcl_phys_dict["eta"])},{len(list_gnn_cells)} GNN Clusters',xlabel=f'$\eta$',ylabel=f'$\phi$')
             ax[0].legend(bbox_to_anchor=(1.01, 0.25),loc='lower left',fontsize='x-small')
             ax[1].legend(bbox_to_anchor=(1.01, 0.25),loc='lower left',fontsize='x-small')
             f.tight_layout()
-            plt.show()
-            plt.close()
+            # plt.show()
+            # plt.close()
+            f.savefig(save_loc+f'/calo_event{i}_clusters.png', bbox_inches="tight")
 
             f,ax = plt.subplots(1,3,figsize=(15,5))
             for t in tees:
                 ax[0].add_patch(matplotlib.patches.Rectangle((t[0],t[1]),t[2]-t[0],t[3]-t[1],lw=1.25,ec='green',fc='none'))
 
-            ax[0].scatter(tc_phys_dict['eta'],tc_phys_dict['phi'],marker='*',color='dodgerblue',s=np.abs(tc_phys_dict['significance']),label='Topocl>5GeV')
-            ax[1].scatter(gcl_phys_dict['eta'],gcl_phys_dict['phi'],marker='*',color='firebrick',s=np.abs(gcl_phys_dict['significance']),label='GNN Clus.')
-            ax[2].scatter(tb_phys_dict['eta'],tb_phys_dict['phi'],marker='*',color='green',s=np.abs(tb_phys_dict['significance']),label='TBoxes')
+            ax[0].scatter(tc_phys_dict['eta'],tc_phys_dict['phi'],marker='x',color='dodgerblue',s=np.abs(tc_phys_dict['significance']),label='Topocl>5GeV')
+            ax[1].scatter(gcl_phys_dict['eta'],gcl_phys_dict['phi'],marker='2',color='firebrick',s=np.abs(gcl_phys_dict['significance']),label='GNN Clus.')
+            ax[2].scatter(tb_phys_dict['eta'],tb_phys_dict['phi'],marker='s',color='green',s=np.abs(tb_phys_dict['significance']),label='TBoxes')
             for ax_i in ax:
                 ax_i.grid()
-                ax_i.set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI))
+                ax_i.set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),xlabel=f'$\eta$',ylabel=f'$\phi$')
                 ax_i.legend(bbox_to_anchor=(1.01, 0.25),loc='lower left',fontsize='x-small')
             f.tight_layout()
-            plt.show()
-            plt.close()
+            # plt.show()
+            # plt.close()
+            f.savefig(save_loc+f'/calo_event{i}_clusters2.png', bbox_inches="tight")
 
 
 
 
-            quit()
+
+            ##----------------------------------------------------------------------------------------
+            # Making jets
+
+            # All topoclusters > 5GeV
+            m = 0.0 #topoclusters have 0 mass
+            ESD_inputs = []
+            for idx in range(len(cluster_data)):
+                cl_px = float(cluster_data[idx]['cl_pt'] * np.cos(cluster_data[idx]['cl_phi']))
+                cl_py = float(cluster_data[idx]['cl_pt'] * np.sin(cluster_data[idx]['cl_phi']))
+                cl_pz = float(cluster_data[idx]['cl_pt'] * np.sinh(cluster_data[idx]['cl_eta']))
+                ESD_inputs.append(fastjet.PseudoJet(cl_px,cl_py,cl_pz,m))
+
+            # Truth boxes of old
+            truth_box_inputs = []
+            for idx in range(len(list_truth_cells)):
+                truth_box_e = tb_phys_dict['energy'][idx]
+                truth_box_eta = tb_phys_dict['eta'][idx]
+                truth_box_theta = 2*np.arctan(np.exp(-truth_box_eta))
+                truth_box_phi = tb_phys_dict['phi'][idx]
+                truth_box_inputs.append(fastjet.PseudoJet(truth_box_e*np.sin(truth_box_theta)*np.cos(truth_box_phi),
+                                                        truth_box_e*np.sin(truth_box_theta)*np.sin(truth_box_phi),
+                                                        truth_box_e*np.cos(truth_box_theta),
+                                                        m))
+
+            # GNN clusters (new)
+            gnn_cl_inputs = []                                            
+            for j in range(len(list_gnn_cells)):
+                gcl_e = gcl_phys_dict['energy'][j]
+                gcl_eta = gcl_phys_dict['eta'][j]
+                gcl_theta = 2*np.arctan(np.exp(-gcl_eta))
+                gcl_phi = gcl_phys_dict['phi'][j]
+                gnn_cl_inputs.append(fastjet.PseudoJet(gcl_e*np.sin(gcl_theta)*np.cos(gcl_phi),
+                                                        gcl_e*np.sin(gcl_theta)*np.sin(gcl_phi),
+                                                        gcl_e*np.cos(gcl_theta),
+                                                        m))
+
+
+            # Get jet properties
+
+            batch_E_esdjets, batch_pt_esdjets, batch_eta_esdjets, batch_phi_esdjets = list(),list(),list(),list()
+            for oj in range(len(jet_data)):
+                offjet = jet_data[oj]
+                batch_E_esdjets.append(offjet['AntiKt4EMTopoJets_E'])
+                batch_pt_esdjets.append(offjet['AntiKt4EMTopoJets_JetConstitScaleMomentum_pt'])
+                batch_eta_esdjets.append(offjet['AntiKt4EMTopoJets_JetConstitScaleMomentum_eta'])
+                batch_phi_esdjets.append(offjet['AntiKt4EMTopoJets_JetConstitScaleMomentum_phi'])
+
+            ESD_cluster_jets = fastjet.ClusterSequence(ESD_inputs, jetdef)
+            ESD_cluster_inc_jets = ESD_cluster_jets.inclusive_jets()
+            batch_energy_fjets, batch_pt_fjets, batch_eta_fjets, batch_phi_fjets, batch_m_fjets = list(),list(),list(),list(),list()
+            for idx in range(len(ESD_cluster_inc_jets)):
+                ii = ESD_cluster_inc_jets[idx]
+                batch_energy_fjets.append(ii.E())
+                batch_pt_fjets.append(ii.pt())
+                batch_eta_fjets.append(ii.eta())
+                batch_phi_fjets.append(transform_angle(ii.phi()))
+
+            truth_box_jets = fastjet.ClusterSequence(truth_box_inputs,jetdef)
+            truth_box_inc_jets = truth_box_jets.inclusive_jets()
+            batch_energy_tboxjets, batch_pt_tboxjets, batch_eta_tboxjets, batch_phi_tboxjets = list(),list(),list(),list()
+            for j in range(len(truth_box_inc_jets)):
+                jj = truth_box_inc_jets[j]
+                batch_energy_tboxjets.append(jj.E())
+                batch_pt_tboxjets.append(jj.pt())
+                batch_eta_tboxjets.append(jj.eta())
+                batch_phi_tboxjets.append(transform_angle(jj.phi()))
+        
+            gcl_jets = fastjet.ClusterSequence(gnn_cl_inputs,jetdef)
+            gcl_inc_jets = gcl_jets.inclusive_jets()
+            batch_energy_gcljets, batch_pt_gcljets, batch_eta_gcljets, batch_phi_gcljets = list(),list(),list(),list()
+            for k in range(len(gcl_inc_jets)):
+                kk = gcl_inc_jets[k]
+                batch_energy_gcljets.append(kk.E())
+                batch_pt_gcljets.append(kk.pt())
+                batch_eta_gcljets.append(kk.eta())
+                batch_phi_gcljets.append(transform_angle(kk.phi()))  
+
+
+            batch_eta_fjets, batch_phi_fjets, batch_pt_fjets = np.array(batch_eta_fjets), np.array(batch_phi_fjets), np.array(batch_pt_fjets)
+            batch_eta_gcljets, batch_phi_gcljets, batch_pt_gcljets = np.array(batch_eta_gcljets), np.array(batch_phi_gcljets), np.array(batch_pt_gcljets)
+            batch_eta_tboxjets, batch_phi_tboxjets, batch_pt_tboxjets = np.array(batch_eta_tboxjets), np.array(batch_phi_tboxjets), np.array(batch_pt_tboxjets)
+
+
+            f,ax = plt.subplots(1,4,figsize=(16,5))
+            ax[0].scatter(batch_eta_esdjets,batch_phi_esdjets,marker='*',color='gold',s=np.array(batch_pt_esdjets)/1000)
+            ax[1].scatter(batch_eta_fjets,batch_phi_fjets,marker='*',color='dodgerblue',s=batch_pt_fjets/1000)
+            ax[2].scatter(batch_eta_gcljets,batch_phi_gcljets,marker='*',color='firebrick',s=batch_pt_gcljets/1000)
+            ax[3].scatter(batch_eta_tboxjets,batch_phi_tboxjets,marker='*',color='green',s=batch_pt_tboxjets/1000)
+
+            ax[0].set_title(f"ESD Jets ({len(batch_eta_esdjets)})")
+            ax[1].set_title(f"All topoclusters > 5GeV ({len(batch_eta_fjets)})")
+            ax[2].set_title(f"GNN Cluster Jets ({len(batch_eta_gcljets)})")
+            ax[3].set_title(f"Truth Box Jets ({len(batch_eta_tboxjets)})")
+
+            for ax_i in ax:
+                ax_i.grid()
+                ax_i.set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),xlabel=f'$\eta$',ylabel=f'$\phi$')
+            f.tight_layout()
+            f.savefig(save_loc+f'/calo_event{i}_jets.png', bbox_inches="tight")
+
+            # only show those above pt Cut
+            pt_cut = 7_500#MeV
+            f,ax = plt.subplots(1,4,figsize=(16,5))
+            ax[0].scatter(batch_eta_esdjets,batch_phi_esdjets,marker='*',color='gold',s=np.array(batch_pt_esdjets)/1000)
+            ax[1].scatter(batch_eta_fjets[batch_pt_fjets>pt_cut],batch_phi_fjets[batch_pt_fjets>pt_cut],marker='*',color='dodgerblue',s=batch_pt_fjets[batch_pt_fjets>pt_cut]/1000)
+            ax[2].scatter(batch_eta_gcljets[batch_pt_gcljets>pt_cut],batch_phi_gcljets[batch_pt_gcljets>pt_cut],marker='*',color='firebrick',s=batch_pt_gcljets[batch_pt_gcljets>pt_cut]/1000)
+            ax[3].scatter(batch_eta_tboxjets[batch_pt_tboxjets>pt_cut],batch_phi_tboxjets[batch_pt_tboxjets>pt_cut],marker='*',color='green',s=batch_pt_tboxjets[batch_pt_tboxjets>pt_cut]/1000)
+
+            ax[0].set_title(f"ESD Jets ({len(batch_eta_esdjets)})")
+            ax[1].set_title(f"All topoclusters > 5GeV ({len(batch_eta_fjets[batch_pt_fjets>pt_cut])}) [$p_T>7.5$GeV]")
+            ax[2].set_title(f"GNN Cluster Jets ({len(batch_eta_gcljets[batch_pt_gcljets>pt_cut])}) [$p_T>7.5$GeV]")
+            ax[3].set_title(f"Truth Box Jets ({len(batch_eta_tboxjets[batch_pt_tboxjets>pt_cut])}) [$p_T>7.5$GeV]")
+
+            for ax_i in ax:
+                ax_i.grid()
+                ax_i.set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),xlabel=f'$\eta$',ylabel=f'$\phi$')
+            f.tight_layout()
+            f.savefig(save_loc+f'/calo_event{i}_jets2.png', bbox_inches="tight")
+
+
+            print()
+            print(f'Jets in the ESD: {min(batch_pt_esdjets):.1f}, {np.mean(batch_pt_esdjets):.1f}, {max(batch_pt_esdjets):.1f}')
+            print(f'Jets from the topoclusters: {min(batch_pt_fjets):.1f}, {np.mean(batch_pt_fjets):.1f}, {max(batch_pt_fjets):.1f}')
+            print(f'Jets from gnn: {min(batch_pt_gcljets):.1f}, {np.mean(batch_pt_gcljets):.1f}, {max(batch_pt_gcljets):.1f}')
+            print(f'Jets from boxes: {min(batch_pt_tboxjets):.1f}, {np.mean(batch_pt_tboxjets):.1f}, {max(batch_pt_tboxjets):.1f}')
+
+            print(f'Jets from the topoclusters >7.5: {min(batch_pt_fjets[batch_pt_fjets>pt_cut]):.1f}, {np.mean(batch_pt_fjets[batch_pt_fjets>pt_cut]):.1f}, {max(batch_pt_fjets[batch_pt_fjets>pt_cut]):.1f}')
+            print(f'Jets from gnn >7.5: {min(batch_pt_gcljets[batch_pt_gcljets>pt_cut]):.1f}, {np.mean(batch_pt_gcljets[batch_pt_gcljets>pt_cut]):.1f}, {max(batch_pt_gcljets[batch_pt_gcljets>pt_cut]):.1f}')
+            print()
+
+            if input("Continue to next event (y/n)?") != 'y':
+                print('Exiting gracefully')
+                quit()
+
+
 
 
         

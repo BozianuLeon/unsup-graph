@@ -148,9 +148,9 @@ if __name__=='__main__':
         ax3.set(xlabel='X',ylabel='Z',zlabel='Y',title=f'{len(eval_topocl)} Topocluster(s), {len(np.concatenate(eval_topocl))} cells')
 
         fig.tight_layout()
-        # plt.show()
-        # plt.close()
-        fig.savefig(save_loc+f'/toy_data_event{evt}.png', bbox_inches="tight")
+        plt.show()
+        plt.close()
+        # fig.savefig(save_loc+f'/toy_data_event{evt}.png', bbox_inches="tight")
         print(f"Event number {evt}")
         for value, count in zip(unique_values, counts):
             print(f"\tCluster {value}: {count} occurrences")   
