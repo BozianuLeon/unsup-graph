@@ -8,7 +8,8 @@ import matplotlib
 import h5py
 import os
 import pandas as pd
-# import xgboost
+import sklearn as sk
+import xgboost as xgb
 
 from utils import wrap_check_truth, perpendicular_dists, RetrieveCellIdsFromCluster, RetrieveClusterCellsFromBox
 
@@ -109,10 +110,103 @@ if __name__=="__main__":
     with open("../../struc_array.npy", "rb") as file:
         inference = np.load(file)
 
-    data_df = make_bdt_training(inference,box_eta_cut)
-    print(data_df.columns)
-    print(data_df.shape)
-    print(data_df.head)
-    # data_df.to_parquet("datasets/overall_stats/bdt_n_cluster.parquet")
-    data_df.to_pickle("datasets/overall_stats/bdt_n_cluster.pkl")
+    if input("Would you like to make/save pandas dataframe (y/n)?") == 'y':
+        data_df = make_bdt_training(inference,box_eta_cut)
+        # data_df.to_parquet("datasets/overall_stats/bdt_n_cluster.parquet")
+        data_df.to_pickle("datasets/overall_stats/bdt_n_cluster.pkl")
+
+    print('Loading in already saved pandas dataframe...')
+    # df = pd.read_pickle("datasets/overall_stats/bdt_n_cluster.pkl")
+    df = pd.read_pickle("datasets/overall_stats/ALL_bdt_n_cluster.pkl")
+    print(df.columns)
+    print(df.shape)
+    print(df.head)
+    labels = df['n_clusters'].to_numpy()
+    features = df.drop('n_clusters', axis=1).to_numpy()
+
+    # X_train, X_test, y_train, y_test = sk.model_selection.train_test_split(
+        # df.drop('n_clusters', axis=1), df['n_clusters'], test_size=0.2, random_state=2)
+    X_train, X_test, y_train, y_test = sk.model_selection.train_test_split(
+        features, labels, test_size=0.2, random_state=2)
+    
+    xgb_train = xgb.DMatrix(X_train, label=y_train)
+    xgb_test = xgb.DMatrix(X_test)
+
+
+    def quartic_error_obj(y_pred, dtrain):
+        y_true = dtrain.get_label()
+        # error = (y_true - y_pred) ** 4
+        grad = -4 * (y_true - y_pred) ** 3  # Gradient of the loss function
+        hess = 12 * (y_true - y_pred) ** 2  # Second derivative of the loss function
+        return grad, hess
+
+    # Train 
+    params = {
+        # 'objective': 'reg:squarederror', #pseudohubererror, absoluteerror
+        'min_child_weight': 2,
+        'max_depth': 7,
+        'alpha': 10,
+        'learning_rate': 0.1,
+        'nfold':5,
+        'seed': 0
+    }
+    xgb_regressor = xgb.train(params=params, dtrain=xgb_train,obj=quartic_error_obj, num_boost_round=45)
+    # xgb_regressor = xgb.XGBRegressor(objective='reg:squarederror', random_state=2)
+    # xgb_regressor.fit(X_train, y_train)
+
+    # Predict
+    y_pred = xgb_regressor.predict(xgb_test)
+    # y_pred_series = pd.Series(y_pred, index=X_test.index, name='n_clusters_pred')
+    # y_pred_int = pd.Series(np.rint(y_pred), index=X_test.index, name='n_clusters_pred_int')
+
+
+    # Compare the predicted and actual values (optional)
+    # pred_df = pd.concat([y_test,y_pred_int, y_pred_series], axis=1)
+    # print(pred_df)
+    pred_np = np.column_stack((y_test, np.rint(y_pred), y_pred))
+    print(pred_np)
+    # for jk in zip(y_test,y_pred_int):
+    #     print(jk)
+
+
+    # Plot prediction against truth
+    plt.figure()
+    plt.plot(y_test,y_test,ls='--',color='red')
+    plt.scatter(x=y_test, y=y_pred)
+    plt.xlabel('Num. clusters per box')
+    plt.ylabel('XGB Prediction')
+    plt.show()
+
+    plt.figure()
+    plt.plot(y_test,y_test,ls='--',color='red')
+    plt.scatter(x=y_test, y=np.rint(y_pred))
+    plt.xlabel('Num. clusters per box')
+    plt.ylabel('XGB Prediction (rounded)')
+    plt.show()
+
+
+    # Plot the feature importance
+    xgb.plot_importance(xgb_regressor)
+    plt.tight_layout()
+    plt.show()
+    feature_important = xgb_regressor.get_score(importance_type='weight')
+    keys = list(feature_important.keys())
+    values = list(feature_important.values())
+    print(keys)
+    print(values)
+    print()
+
+    # Plot the tree (needs graphviz)
+    # plt.figure()
+    # xgb.to_graphviz(xgb_regressor, num_trees=2)
+    # plt.tight_layout()
+    # plt.show()
+    # plt.close()
+
+    features = np.array([[2000, 350, 175, 0.0, 100.0, 0.46]])
+    features = np.array([[128, 7, 2, 2.92, 0.52, 0.35]])
+    prediction = xgb_regressor.predict(xgb.DMatrix(features))
+    print(prediction)
+
+
 

@@ -82,7 +82,7 @@ if __name__=='__main__':
     print(f'Starting {name} training...\n\t{len(train_data_list)} training graphs, {len(test_data_list)} validation graphs, with {train_data_list[0].x.shape[1]} attributes per node')
 
     #initialise model
-    num_clusters = 3
+    num_clusters = 19
     hidden_channels = 256
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # device = torch.device('mps' if torch.backends.mps.is_available() else 'cpu')
