@@ -8,6 +8,7 @@ import matplotlib
 import h5py
 import os
 import time
+import xgboost as xgb
 
 from utils import wrap_check_truth, perpendicular_dists, RetrieveCellIdsFromCluster, RetrieveClusterCellsFromBox
 from metrics import get_physics_dictionary
@@ -70,14 +71,14 @@ if __name__=='__main__':
     models =  {ncl: Net(in_channels=4,hidden_channels=hidden_channels, out_channels=ncl).to(device) for ncl in out_channels}
     # Load model weights
     for ncl, model in zip(out_channels,models.values()):
-        print(ncl)
-        print(model)
+        # print(ncl)
+        # print(model)
         model.load_state_dict(torch.load("models/" + f"calo_dmon_{dataset_name}_data_{hidden_channels}nn_{ncl}c_{num_epochs}e" + ".pt"))
         model.eval()
 
     print(models.keys())
-    print(models[2])
-    print(models[1])
+    # print(models[2])
+    # print(models[1])
 
     # Save here:
     save_loc = "plots/" + name +"/one_event/" + time.strftime("%Y%m%d-%H") + "/"
@@ -156,35 +157,54 @@ if __name__=='__main__':
                         event_graph  = torch_geometric.data.Data(x=torch.column_stack([coordinates,cell_delta_R]),edge_index=edge_indices,y=cell_ids) 
 
                         ##----------------------------------------------------------------------------------------
+                        # Calculate number of clusters (BDT)
+                        ##----------------------------------------------------------------------------------------
+                         
+                        # features should be: n_cells, n_2sigcells, n_4sigcells, box eta, box significance, box area
+                        bdt_features = np.array([[len(truth_box_cells_i),
+                                                 len(truth_box_cells_i[abs(truth_box_cells_i['cell_E'] / truth_box_cells_i['cell_Sigma']) >= 2]),
+                                                 len(truth_box_cells_i[abs(truth_box_cells_i['cell_E'] / truth_box_cells_i['cell_Sigma']) >= 4]),
+                                                 np.dot(truth_box_cells_i['cell_eta'],np.abs(truth_box_cells_i['cell_E'])) / sum(np.abs(truth_box_cells_i['cell_E'])),
+                                                 sum(truth_box_cells_i['cell_E'] / np.sqrt(sum(truth_box_cells_i['cell_Sigma']**2))),
+                                                 (tees[truth_box_number][2]-tees[truth_box_number][0])*(tees[truth_box_number][3]-tees[truth_box_number][1])
+                                                 ]])
+                        
+                        load_xgb_model = xgb.Booster()
+                        load_xgb_model.load_model(f'models/xgb_calo_n_clusters.json')
+                        predicted_n_clusters = load_xgb_model.predict(xgb.DMatrix(bdt_features))
+                        predicted_n_clusters = np.rint(predicted_n_clusters) # round to nearest whole number
+                        predicted_n_clusters = int(min(predicted_n_clusters,20)) # integer for key, max 20 clusters
+                        print('n clusters-->',predicted_n_clusters,int(predicted_n_clusters),'truth-->',len(cluster_cells_i))
+
+                        ##----------------------------------------------------------------------------------------
                         # Run inference
                         ##----------------------------------------------------------------------------------------
                         
-                        # how many clusters should the GNN look for? Naive cut:
-                        if (len(truth_box_cells_2sig_i['cell_eta'])<100):
-                            pred,tot_loss,clus_ass = model3(event_graph.x,event_graph.edge_index,batch=None) #no batch?
-                        elif (len(truth_box_cells_2sig_i['cell_eta'])<175):
-                            pred,tot_loss,clus_ass = model5(event_graph.x,event_graph.edge_index,batch=None) 
-                        elif (len(truth_box_cells_2sig_i['cell_eta'])<300):
-                            pred,tot_loss,clus_ass = model10(event_graph.x,event_graph.edge_index,batch=None) 
-                        elif (len(truth_box_cells_2sig_i['cell_eta'])<425):
-                            pred,tot_loss,clus_ass = model15(event_graph.x,event_graph.edge_index,batch=None) 
-                        else:
-                            pred,tot_loss,clus_ass = model20(event_graph.x,event_graph.edge_index,batch=None) 
+                        if (predicted_n_clusters >= 2):
+                            model_n_clusters = models[predicted_n_clusters]
+                            model_n_clusters.eval()
+                            pred,tot_loss,clus_ass = model_n_clusters(event_graph.x,event_graph.edge_index,batch=None) #none batch?
 
-                        # retrieve clusters from GNN
-                        predicted_classes = clus_ass.squeeze().argmax(dim=1).numpy()
-                        unique_values, counts = np.unique(predicted_classes, return_counts=True)
+                            # retrieve clusters from GNN
+                            predicted_classes = clus_ass.squeeze().argmax(dim=1).numpy()
+                            unique_values, counts = np.unique(predicted_classes, return_counts=True)
 
-                        gnn_cluster_cells_i = list()
-                        for cluster_no in unique_values:
-                            cluster_id = predicted_classes==cluster_no
-                            gnn_cluster_ids = event_graph.y[cluster_id]
-                            cell_mask = np.isin(cells['cell_IdCells'],gnn_cluster_ids.detach().numpy())
-                            gnn_desired_cells = cells[cell_mask][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_DetCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
-                            gnn_cluster_cells_i.append(gnn_desired_cells)
-                            list_gnn_cells.append(gnn_desired_cells)
-                        print('\t',len(gnn_cluster_cells_i), 'GNN clusters there were', len(cluster_cells_i), 'TCs', len(coordinates), 'cells')
-                    
+                            gnn_cluster_cells_i = list()
+                            for cluster_no in unique_values:
+                                cluster_id = predicted_classes==cluster_no
+                                gnn_cluster_ids = event_graph.y[cluster_id]
+                                cell_mask = np.isin(cells['cell_IdCells'],gnn_cluster_ids.detach().numpy())
+                                gnn_desired_cells = cells[cell_mask][['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_DetCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
+                                gnn_cluster_cells_i.append(gnn_desired_cells)
+                                list_gnn_cells.append(gnn_desired_cells)
+                            print('\t',len(gnn_cluster_cells_i), 'GNN clusters (',len(unique_values),' filled ) there were', len(cluster_cells_i), 'TCs', len(coordinates), 'cells')
+                        
+                        # Get boxes that BDT think contains one cluster, no GNN
+                        elif (predicted_n_clusters == 1):
+                            print('\tBDT says 1')
+                            small_point_clouds = truth_box_cells_2sig_i[['cell_E','cell_eta','cell_phi','cell_Sigma','cell_IdCells','cell_DetCells','cell_xCells','cell_yCells','cell_zCells','cell_TimeCells']]
+                            list_gnn_cells.append(small_point_clouds)
+
                     # Get boxes that are too small (<50 2sig cells)
                     else:
                         print('\tToo few cells box')
@@ -202,6 +222,7 @@ if __name__=='__main__':
             print('Number of truth boxes',len(list_truth_cells),tees.shape)
             print('Number of GNN clusters',len(list_gnn_cells))
             print('\n\n\n')
+
             ##----------------------------------------------------------------------------------------
 
             tc_phys_dict = get_physics_dictionary(list_topo_cells)
@@ -213,14 +234,15 @@ if __name__=='__main__':
             f,ax = plt.subplots(1,2,figsize=(10,5))
             for t in tees:
                 ax[0].add_patch(matplotlib.patches.Rectangle((t[0],t[1]),t[2]-t[0],t[3]-t[1],lw=1.25,ec='green',fc='none'))
+                ax[1].add_patch(matplotlib.patches.Rectangle((t[0],t[1]),t[2]-t[0],t[3]-t[1],lw=1.25,ec='green',fc='none'))
 
             ax[0].scatter(tc_phys_dict['eta'],tc_phys_dict['phi'],marker='*',color='dodgerblue',s=12,label='Topocl>5GeV')
-            ax[1].scatter(gcl_phys_dict['eta'],gcl_phys_dict['phi'],marker='*',color='firebrick',s=12,label='GNN Clus.')
+            ax[1].scatter(gcl_phys_dict['eta'],gcl_phys_dict['phi'],marker='2',color='firebrick',s=12,label='GNN Clus.')
 
             ax[0].grid()
             ax[1].grid()
-            ax[0].set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),title=f'Event {i}, {len(tc_phys_dict["eta"])},{len(list_topo_cells)} Topocluster(s)')
-            ax[1].set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),title=f'Event {i}, {len(gcl_phys_dict["eta"])},{len(list_gnn_cells)} GNN Clusters')
+            ax[0].set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),title=f'Event {i}, {len(tc_phys_dict["eta"])},{len(list_topo_cells)} Topocluster(s)',xlabel=f'$\eta$',ylabel=f'$\phi$')
+            ax[1].set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),title=f'Event {i}, {len(gcl_phys_dict["eta"])},{len(list_gnn_cells)} GNN Clusters',xlabel=f'$\eta$',ylabel=f'$\phi$')
             ax[0].legend(bbox_to_anchor=(1.01, 0.25),loc='lower left',fontsize='x-small')
             ax[1].legend(bbox_to_anchor=(1.01, 0.25),loc='lower left',fontsize='x-small')
             f.tight_layout()
@@ -232,11 +254,11 @@ if __name__=='__main__':
                 ax[0].add_patch(matplotlib.patches.Rectangle((t[0],t[1]),t[2]-t[0],t[3]-t[1],lw=1.25,ec='green',fc='none'))
 
             ax[0].scatter(tc_phys_dict['eta'],tc_phys_dict['phi'],marker='*',color='dodgerblue',s=np.abs(tc_phys_dict['significance']),label='Topocl>5GeV')
-            ax[1].scatter(gcl_phys_dict['eta'],gcl_phys_dict['phi'],marker='*',color='firebrick',s=np.abs(gcl_phys_dict['significance']),label='GNN Clus.')
-            ax[2].scatter(tb_phys_dict['eta'],tb_phys_dict['phi'],marker='*',color='green',s=np.abs(tb_phys_dict['significance']),label='TBoxes')
+            ax[1].scatter(gcl_phys_dict['eta'],gcl_phys_dict['phi'],marker='2',color='firebrick',s=np.abs(gcl_phys_dict['significance']),label='GNN Clus.')
+            ax[2].scatter(tb_phys_dict['eta'],tb_phys_dict['phi'],marker='s',color='green',s=np.abs(tb_phys_dict['significance']),label='TBoxes')
             for ax_i in ax:
                 ax_i.grid()
-                ax_i.set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI))
+                ax_i.set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),xlabel=f'$\eta$',ylabel=f'$\phi$')
                 ax_i.legend(bbox_to_anchor=(1.01, 0.25),loc='lower left',fontsize='x-small')
             f.tight_layout()
             plt.show()
@@ -245,7 +267,9 @@ if __name__=='__main__':
 
 
 
-            quit()
+            if input("Continue to next event (y/n)?") != 'y':
+                print('Exiting gracefully')
+                quit()
 
 
         

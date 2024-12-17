@@ -208,5 +208,8 @@ if __name__=="__main__":
     prediction = xgb_regressor.predict(xgb.DMatrix(features))
     print(prediction)
 
+    xgb_regressor.save_model(f'models/xgb_calo_n_clusters.json')
+    print('Model saved in ./models/ dir ') 
+
 
 
