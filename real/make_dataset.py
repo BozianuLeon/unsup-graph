@@ -7,11 +7,11 @@ import numpy as np
 import numpy.lib.recfunctions as rf
 import pickle
 
+from utils import wrap_check_truth, remove_nan, perpendicular_dists, RetrieveCellIdsFromCluster, RetrieveClusterCellsFromBox
+
 MIN_CELLS_PHI,MAX_CELLS_PHI = -3.1334076, 3.134037
 MIN_CELLS_ETA,MAX_CELLS_ETA = -4.823496, 4.823496
 
-
-from utils import wrap_check_truth, remove_nan, perpendicular_dists, RetrieveCellIdsFromCluster, RetrieveClusterCellsFromBox
 
 
 
@@ -105,7 +105,7 @@ if __name__=="__main__":
     box_eta_cut=2.1
     cell_significance_cut=2
     norm=False
-    k=4
+    k=3
 
     with open("../../struc_array.npy", "rb") as file:
         inference = np.load(file)

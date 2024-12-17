@@ -1,8 +1,9 @@
-blobs/plots/*
-blobs/models/*
+blobs/plots/
+blobs/models/
 real/models/
 real/datasets/
 real/plots/
 real/__pycache__
+wandb/
 *.pth
 .DS_Store

@@ -8,7 +8,6 @@ import matplotlib
 import h5py
 import os
 import time
-import pickle
 import random
 
 from utils import wrap_check_truth, perpendicular_dists, RetrieveCellIdsFromCluster, RetrieveClusterCellsFromBox
@@ -70,7 +69,7 @@ if __name__=='__main__':
     dataset_name = f"xyzdeltaR_{n_graphs}_{box_eta_cut}_{cell_significance_cut}_{k}"
 
     #initialise model
-    num_clusters = 5
+    num_clusters = 15
     hidden_channels = 256
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = Net(in_channels=4,
@@ -175,8 +174,8 @@ if __name__=='__main__':
                         #make plots
                         fig = plt.figure(figsize=(12, 8))
                         # 1. Model Input
-                        ax1 = fig.add_subplot(221, projection='3d')
-                        ax1.scatter(event_graph.x[:, 0], event_graph.x[:, 2], event_graph.x[:, 1], c="b", marker='o',s=4)
+                        ax1 = fig.add_subplot(223, projection='3d')
+                        ax1.scatter(event_graph.x[:, 0], event_graph.x[:, 2], event_graph.x[:, 1], c="b", marker='o',s=30)
                         for src, dst in event_graph.edge_index.t().tolist():
                             x_src, y_src, z_src = event_graph.x[src][:3]
                             x_dst, y_dst, z_dst = event_graph.x[dst][:3]
@@ -184,7 +183,7 @@ if __name__=='__main__':
 
 
                         # 2. Model Output
-                        ax2 = fig.add_subplot(222, projection='3d')
+                        ax2 = fig.add_subplot(224, projection='3d')
                         ax2.set(xlim=ax1.get_xlim(),ylim=ax1.get_ylim(),zlim=ax1.get_zlim())
                         xs = event_graph.x[:, 0]
                         ys = event_graph.x[:, 1]
@@ -193,20 +192,20 @@ if __name__=='__main__':
                         colors = matplotlib.cm.gnuplot(np.linspace(0, 1, num_clusters))
                         for i in unique_values:
                             mask = predicted_classes==i
-                            ax2.scatter(xs[mask],zs[mask],ys[mask],color=colors[i],marker=markers[i],s=12,label=f'{i}: {counts[np.where(unique_values==i)[0]][0]}')
-                        ax2.legend(bbox_to_anchor=(1.05, 0.25),loc='lower left',fontsize='x-small')
+                            ax2.scatter(xs[mask],zs[mask],ys[mask],color=colors[i],marker=markers[i],s=64,label=f'{i}: {counts[np.where(unique_values==i)[0]][0]}')
+                        # ax2.legend(bbox_to_anchor=(1.05, 0.25),loc='lower left',fontsize='x-small')
 
                         # 3. TopoClusters
-                        ax3 = fig.add_subplot(223, projection='3d')
+                        ax3 = fig.add_subplot(221, projection='3d')
                         ax3.set(xlim=ax1.get_xlim(),ylim=ax1.get_ylim(),zlim=ax1.get_zlim())
                         for cl_idx in range(len(cluster_cells_i)):
                             cluster_inside_box = cluster_cells_i[cl_idx]
-                            ax3.scatter(cluster_inside_box['cell_xCells'], cluster_inside_box['cell_zCells'], cluster_inside_box['cell_yCells'], marker=markers[cl_idx],s=8,label=f'TC {cl_idx}: {len(cluster_inside_box)}')
-                        ax3.legend(bbox_to_anchor=(1.07, 0.25),loc='lower left',fontsize='x-small')
+                            ax3.scatter(cluster_inside_box['cell_xCells'], cluster_inside_box['cell_zCells'], cluster_inside_box['cell_yCells'], marker=markers[cl_idx],s=48,label=f'TC {cl_idx}: {len(cluster_inside_box)}')
+                        # ax3.legend(bbox_to_anchor=(1.07, 0.25),loc='lower left',fontsize='x-small')
 
 
                         # 4. TopoClusters 2 sigma cells
-                        ax4 = fig.add_subplot(224, projection='3d')
+                        ax4 = fig.add_subplot(222, projection='3d')
                         ax4.set(xlim=ax1.get_xlim(),ylim=ax1.get_ylim(),zlim=ax1.get_zlim())
                         twosigmacl_cells = 0
                         for cl_idx in range(len(cluster_cells_i)):
@@ -214,8 +213,8 @@ if __name__=='__main__':
                             mask = abs(cluster_inside_box['cell_E'] / cluster_inside_box['cell_Sigma']) >= cell_significance_cut
                             cluster_cells_2sig_i = cluster_inside_box[mask]
                             twosigmacl_cells += len(cluster_cells_2sig_i)
-                            ax4.scatter(cluster_cells_2sig_i['cell_xCells'], cluster_cells_2sig_i['cell_zCells'], cluster_cells_2sig_i['cell_yCells'], marker=markers[cl_idx],s=12,label=f'TC {cl_idx}: {len(cluster_cells_2sig_i)}')
-                        ax4.legend(bbox_to_anchor=(1.07, 0.25),loc='lower left',fontsize='x-small')
+                            ax4.scatter(cluster_cells_2sig_i['cell_xCells'], cluster_cells_2sig_i['cell_zCells'], cluster_cells_2sig_i['cell_yCells'], marker=markers[cl_idx],s=48,label=f'TC {cl_idx}: {len(cluster_cells_2sig_i)}')
+                        # ax4.legend(bbox_to_anchor=(1.07, 0.25),loc='lower left',fontsize='x-small')
 
                         ax1.set(xlabel='X',ylabel='Z',zlabel='Y')
                         ax1.set_title(f'Model Input: {len(event_graph.x)} >2 signif. Cells, {len(event_graph.edge_index.t())} Edges',fontsize=10,y=0.98)
@@ -275,6 +274,20 @@ if __name__=='__main__':
 
 
                         # project in eta-phi
+                        f,ax = plt.subplots(1,1,figsize=(5,6))
+                        truth_box_i = tees[truth_box_number]
+                        ax.add_patch(matplotlib.patches.Rectangle((truth_box_i[0],truth_box_i[1]),truth_box_i[2]-truth_box_i[0],truth_box_i[3]-truth_box_i[1],lw=1.25,ec='green',fc='none'))    
+                        ax.scatter(cl_etas,cl_phis,marker='*',color='dodgerblue',s=12)
+
+                        ax.grid()
+                        ax.axhline(MIN_CELLS_PHI,ls='--',lw=2.0, color='purple')
+                        ax.axhline(MAX_CELLS_PHI,ls='--',lw=2.0, color='purple')
+                        ax.set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),title=f'Box {truth_box_number}, ({truth_box_i[0]:.1f},{truth_box_i[1]:.1f}): {len(cluster_cells_i)} Topocluster(s)')
+                        f.tight_layout()
+                        plt.show()
+                        plt.close()
+
+
                         f,ax = plt.subplots(1,2,figsize=(10,5))
                         truth_box_i = tees[truth_box_number]
                         ax[0].add_patch(matplotlib.patches.Rectangle((truth_box_i[0],truth_box_i[1]),truth_box_i[2]-truth_box_i[0],truth_box_i[3]-truth_box_i[1],lw=1.25,ec='green',fc='none'))
@@ -288,7 +301,6 @@ if __name__=='__main__':
                         for gcl_idx in range(len(gnn_cluster_cells_i)):
                             ax[1].scatter(gcl_etas[gcl_idx],gcl_phis[gcl_idx],marker=markers[gcl_idx],s=75,color=colors[gcl_idx],label=f'GCl {gcl_idx}: ({len(gnn_cluster_cells_i[gcl_idx])})')
 
-                        ax[0].grid()
                         ax[0].set(xlim=(MIN_CELLS_ETA,MAX_CELLS_ETA),ylim=(MIN_CELLS_PHI,MAX_CELLS_PHI),title=f'Box {truth_box_number}, ({truth_box_i[0]:.1f},{truth_box_i[1]:.1f}): {len(cluster_cells_i)} Topocluster(s)')
                         ax[1].grid()
                         ax[1].legend(bbox_to_anchor=(1.01, 0.25),loc='lower left',fontsize='x-small')
