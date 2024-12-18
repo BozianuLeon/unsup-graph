@@ -1,9 +1,11 @@
 blobs/plots/
 blobs/models/
-real/models/
-real/datasets/
-real/plots/
-real/__pycache__
-wandb/
+RoI/models/
+RoI/datasets/
+RoI/plots/
+RoI/__pycache__
+RoI/wandb
+cylinder/plots/
+cylinder/models/
 *.pth
 .DS_Store

@@ -35,6 +35,18 @@ def make_data_list(num_graphs,avg_num_nodes=250,k=3):
             point_importance[i] = 1 / np.linalg.norm(coordinates[i] - center) 
             true_clusters[i] = rnd_cluster_idx
 
+        # noise points
+        noise_coordinates = torch.tensor([[5.0, 5.0, 5.0],
+                                          [1.0, 1.0, 1.0],
+                                          [1.0, 5.0, 1.0]
+                                          ])
+        noise_importance = torch.tensor([0.0, 0.0, 0.0])
+        noise_truth = torch.tensor([5.0, 5.0, 5.0])
+        
+        coordinates = torch.vstack([coordinates,noise_coordinates])
+        point_importance = torch.cat((point_importance,noise_importance),0)
+        true_clusters = torch.cat([true_clusters,noise_truth])
+
         feat_mat = torch.column_stack((coordinates, point_importance))
 
         # Create a PyTorch Geometric Data object
@@ -124,7 +136,7 @@ if __name__=='__main__':
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     #run training
-    for epoch in range(1, 40):
+    for epoch in range(1, 20):
         start = time.perf_counter()
         train_loss = train(train_loader)
         train_loss2 = test(train_loader)
@@ -137,6 +149,10 @@ if __name__=='__main__':
     #evaluate using first graph
     eval_graph = test_data_list[0]
     pred,tot_loss,clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
+    print(eval_graph.x.shape)
+    print(clus_ass.shape)
+    for i in range(len(eval_graph.x)):
+        print("coords:",eval_graph.x[i].detach().numpy(),"score",clus_ass[0][i].detach().numpy())
 
     predicted_classes = clus_ass.squeeze().argmax(dim=1).numpy()
     unique_values, counts = np.unique(predicted_classes, return_counts=True)
@@ -158,6 +174,7 @@ if __name__=='__main__':
     labels = [f"{value}: ({count})" for value,count in zip(unique_values, counts)]
     ax2.legend(handles=scatter.legend_elements(num=None)[0],labels=labels,title=f"Classes {len(unique_values)}/{num_clusters}",bbox_to_anchor=(1.07, 0.25),loc='lower left')
     ax2.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Graph with KNN Edges')
+    plt.show()
     fig.savefig(f'../plots/results/synthetic_data_knn_dmon_{num_clusters}clus.png', bbox_inches="tight")
     print()
     for value, count in zip(unique_values, counts):
