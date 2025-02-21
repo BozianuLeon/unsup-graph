@@ -1,4 +1,4 @@
-plots/
+plots/*
 data/pyg/
 *.pth
 .DS_Store
