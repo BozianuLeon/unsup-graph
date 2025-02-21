@@ -76,9 +76,9 @@ def synthetic_cylinder_list(num_graphs,avg_num_nodes,k=3):
 if __name__=="__main__":
     k = 3
     #generate data and put into pytorch geometric dataloaders
-    train_data_list = make_data_list(1000,k)
-    val_data_list = make_data_list(200,k)
-    test_data_list = make_data_list(100,k)
+    train_data_list = synthetic_cylinder_list(1000,k)
+    val_data_list = synthetic_cylinder_list(200,k)
+    test_data_list = synthetic_cylinder_list(100,k)
 
     train_loader = DataLoader(train_data_list, batch_size=20)
     val_loader = DataLoader(val_data_list, batch_size=20)

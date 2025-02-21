@@ -16,7 +16,7 @@ class MyOwnDataset(torch_geometric.data.Dataset):
 
     Args:
         root (str): Root directory where the dataset should be saved.
-                    If root is not specified, no processing
+                    If root is not specified (None), no processing
         k    (int): K-nearest neighbour edhes. Degree of each node
         transform (callable, optional): A function/transform that takes in an
             :obj:`torch_geometric.data.Data` object and returns a transformed
@@ -98,10 +98,11 @@ class MyOwnDataset(torch_geometric.data.Dataset):
                 cells2sig = cells[mask_2sigma]
                 cells4sig = cells[mask_4sigma]
 
+                # get cell feature matrix from struct array 
                 cell_significance = np.expand_dims(abs(cells4sig['cell_E'] / cells4sig['cell_Sigma']),axis=1)
                 cell_features = cells4sig[['cell_xCells','cell_yCells','cell_zCells','cell_eta','cell_phi','cell_E','cell_Sigma','cell_pt']]
                 
-                feature_matrix = rf.structured_to_unstructured(cell_features,dtype=np.float32) # feature_matrix = np.vstack(feature_array.tolist()).astype(np.float32)
+                feature_matrix = rf.structured_to_unstructured(cell_features,dtype=np.float32)
                 feature_matrix = np.hstack((feature_matrix,cell_significance))
                 feature_tensor = torch.tensor(feature_matrix)
                 print("\tX tensor",feature_tensor.shape)
@@ -120,26 +121,32 @@ class MyOwnDataset(torch_geometric.data.Dataset):
                 idx += 1
 
     def get(self, idx):
-        data = torch.load(osp.join(self.processed_dir, f'event_graph_{idx}.pt'))
+        data = torch.load(osp.join(self.processed_dir, f'event_graph_{idx}.pt'), weights_only=False)
         return data
 
 
 
 if __name__ == "__main__":
 
+    # mydata = MyOwnDataset("root_dir")
     mydata = MyOwnDataset(None)
+    print("len",mydata.len(),len(mydata))
     print()
-    print()
-    print("OUT NOW")
-    print("len",mydata.len())
-    print("len",len(mydata))
 
+    event_no = 2
+    event0 = mydata[event_no]
+    print(event0)
 
-
-
-
-
-
-
-
+    import matplotlib.pyplot as plt
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    # remember that XZY makes the calorimeter appear the "correct" way up
+    ax.scatter(event0.x[:, 0], event0.x[:, 2], event0.x[:, 1], s=event0.x[:, -1], c='b', marker='o')
+    for src, dst in event0.edge_index.t().tolist():
+        x_src, y_src, z_src, *feat = event0.x[src]
+        x_dst, y_dst, z_dst, *feat = event0.x[dst]
+        ax.plot([x_src, x_dst], [z_src, z_dst], [y_src, y_dst], c='r')
+    ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Event Graph with KNN 3 Edges')
+    plt.show()
+    fig.savefig(f"../plots/inputs/ex-event-{event_no}.png", bbox_inches="tight")
 
