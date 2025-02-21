@@ -72,7 +72,7 @@ if __name__=='__main__':
 
 
     # instantiate numpy structured array to hold inference results
-    dt = np.dtype([('event_no', 'i4'), ('node_features', 'f4', (350, 3)), ('model_output', 'f4', (config["n_clus"], 128)), ('cluster_assign', 'i4', (300,1))])
+    dt = np.dtype([('event_no', 'i4'), ('node_features', 'f4', (350, 3)), ('model_output', 'f4', (config["n_clus"], 128)), ('cluster_assign', 'i4', (350,1))])
     inference = np.zeros((len(test_loader)*config["BS"]), dtype=dt)  
     model.eval()
     beginning = time.perf_counter()
@@ -108,7 +108,7 @@ if __name__=='__main__':
 
             dataset_idx = step*config["BS"]
 
-            cl_array   = [np.pad(cl_i, ((0,300-len(cl_i))), 'constant', constant_values=(0)) for cl_i in total_clus]
+            cl_array   = [np.pad(cl_i, ((0,350-len(cl_i))), 'constant', constant_values=(0)) for cl_i in total_clus]
             out_array  = [np.pad(out, ((0,config["n_clus"]-len(out)),(0,0)), 'constant', constant_values=(0)) for out in total_pred]
             feat_array = [np.pad(x, ((0,350-len(x)),(0,0)), 'constant', constant_values=(0)) for x in feat_mats]
             # t_boxes = [np.pad(trub, ((0,250-len(trub)),(0,0)), 'constant', constant_values=(0)) for trub in tru_boxes]

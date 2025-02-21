@@ -68,7 +68,7 @@ if __name__=='__main__':
         "n_train"    : 1000,
         "val_frac"   : 0.25,
         "test_frac"  : 0.15,
-        "n_nodes"    : 250,
+        "n_nodes"    : 1000,
         "k"          : args.k,
         "NW"         : args.num_workers,
         "BS"         : args.batch_size,
@@ -84,9 +84,14 @@ if __name__=='__main__':
     n_val   = int(config["n_train"]*config["val_frac"])
     n_test  = int(config["n_train"]*config["test_frac"])
     print('\ttrain / val / test size : ',n_train,'/',n_val,'/',n_test,'\n')
-    train_data = data.synthetic_blobs_list(num_graphs=n_train,avg_num_nodes=config["n_nodes"],k=config["k"])
-    valid_data = data.synthetic_blobs_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
-    test_data  = data.synthetic_blobs_list(num_graphs=n_test,avg_num_nodes=config["n_nodes"],k=config["k"])
+
+    train_data = data.synthetic_cylinder_list(num_graphs=n_train,avg_num_nodes=config["n_nodes"],k=config["k"])
+    valid_data = data.synthetic_cylinder_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
+    test_data  = data.synthetic_cylinder_list(num_graphs=n_test,avg_num_nodes=config["n_nodes"],k=config["k"])
+
+    # train_data = data.synthetic_blobs_list(num_graphs=n_train,avg_num_nodes=config["n_nodes"],k=config["k"])
+    # valid_data = data.synthetic_blobs_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
+    # test_data  = data.synthetic_blobs_list(num_graphs=n_test,avg_num_nodes=config["n_nodes"],k=config["k"])
 
     train_loader = DataLoader(train_data, batch_size=config["BS"], num_workers=config["NW"])
     val_loader   = DataLoader(valid_data, batch_size=config["BS"], num_workers=config["NW"])
@@ -107,7 +112,7 @@ if __name__=='__main__':
         print(f"Epoch: {epoch:03d}, Train Loss: {train_loss:.3f}, Val Loss: {val_loss:.3f}, Time: {time.perf_counter() - start:.3f}s")
 
     model_name = "DMoN_blob_{}c_{}e".format(config["n_clus"],config["n_epochs"])
-    print(f'Saving model now...\t{model_name}')
+    print(f'\nSaving model now...\t{model_name}')
     torch.save(model.state_dict(), args.output_file+"/{}.pth".format(model_name))
 
 
@@ -115,14 +120,15 @@ if __name__=='__main__':
     eval_graph = test_data[0] 
     # inference from a single forward pass
     model.eval()
-    with torch.inference_mode():
-        pred,tot_loss,clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
-        # for i in range(len(eval_graph.x)):
-        #     print("coords:",eval_graph.x[i].detach().numpy(),"score",clus_ass[0][i].detach().numpy())
+    torch.inference_mode()
+    pred,tot_loss,clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
+
 
     # force each node to its most likely cluster, no soft assignment
     predicted_classes = clus_ass.squeeze().argmax(dim=1).numpy()
     unique_values, counts = np.unique(predicted_classes, return_counts=True)
+    for value, count in zip(unique_values, counts):
+        print(f"Cluster {value}: {count} occurrences")
 
     if os.path.exists(f"plots/results/") is False: os.makedirs(f"plots/results/")
     print("Plotting evaluation graph")
@@ -148,5 +154,3 @@ if __name__=='__main__':
     plt.show()
     fig.savefig(f"plots/results/synthetic_data_knn_dmon_{config['n_clus']}clus.png", bbox_inches="tight")
     print()
-    for value, count in zip(unique_values, counts):
-        print(f"Cluster {value}: {count} occurrences")
