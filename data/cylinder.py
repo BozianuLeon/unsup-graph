@@ -5,7 +5,7 @@ from torch_geometric.loader import DataLoader
 from matplotlib import pyplot as plt
 
 
-def synthetic_cylinder_list(num_graphs,k=3):
+def synthetic_cylinder_list(num_graphs,avg_num_nodes,k=3):
     '''
     Quick function to generate synthetic data in a 3D
     cylinder, rough approximation to a calorimeter. 
@@ -21,12 +21,12 @@ def synthetic_cylinder_list(num_graphs,k=3):
             objects containing node features, edge indices and 
             synthetic labels
     '''
-    mean_radius = 24.0
-    mean_length = 72.0
+    mean_radius    = float(avg_num_nodes/10)
+    mean_length    = float(avg_num_nodes/3)
+    mean_num_poles = 12.0
 
-    mean_num_bar_nodes = 12.0
-    mean_num_ec_nodes = 72.0
-    mean_num_poles = 6.0
+    mean_num_bar_nodes = float(avg_num_nodes/15)
+    mean_num_ec_nodes  = float(avg_num_nodes/4)
 
 
     pyg_data_list = []
@@ -45,7 +45,7 @@ def synthetic_cylinder_list(num_graphs,k=3):
         y = radius * torch.sin(theta)
         cyl_points = torch.vstack((torch.tile(x, (num_poles,)), torch.tile(y, (num_poles,)), torch.repeat_interleave(z, num_poles))).T
 
-        # generate lid data
+        # generate endcap data
         ec_theta = torch.rand(num_ec_nodes)*2*torch.pi #uniform in [0,1]
         r = torch.sqrt(torch.rand(num_ec_nodes)*radius**2)
         ec_points = torch.vstack([r * torch.cos(ec_theta), r * torch.sin(ec_theta), length*torch.ones(num_ec_nodes)]).T
@@ -55,12 +55,17 @@ def synthetic_cylinder_list(num_graphs,k=3):
         ec_points2 = torch.vstack([r * torch.cos(ec_theta), r * torch.sin(ec_theta), torch.zeros(num_ec_nodes)]).T
 
         # gather points in torch tensor
-        points = torch.vstack([cyl_points,ec_points,ec_points2])
+        cell_coords = torch.vstack([cyl_points,ec_points,ec_points2])
+
+        # make up something like cell significance/point importance [0,10]
+        point_energy = torch.rand((cell_coords.shape[0],1)) * 10 
 
         # Create a PyTorch Geometric Data object
-        edge_index = torch_geometric.nn.knn_graph(points[:, :3],k=3)
+        edge_index = torch_geometric.nn.knn_graph(cell_coords[:, :3],k=3)
 
-        graph_data = torch_geometric.data.Data(x=points[:, :3],edge_index=edge_index) 
+        feature_matrix = torch.hstack((cell_coords,point_energy))
+
+        graph_data = torch_geometric.data.Data(x=feature_matrix,edge_index=edge_index) 
         pyg_data_list.append(graph_data)
             
     return pyg_data_list
