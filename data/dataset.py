@@ -10,6 +10,55 @@ import os.path as osp
 
 
 
+
+
+def get_features_edges(event_no, h5group_cells, neighbours_array, src_neighbours_array, device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
+
+    # neighbours_array = cell_neighbours = np.load('./pyg/cell_neighbours.npy')
+    # src_neighbours_array = src_cell_neighbours = np.load('./pyg/src_cell_neighbours.npy')
+    # h5group_cells = f1["caloCells"]["2d"]
+    
+    cells = h5group_cells[event_no] 
+    mask_2sigma = abs(cells['cell_E'] / cells['cell_Sigma']) >= 2
+    mask_4sigma = abs(cells['cell_E'] / cells['cell_Sigma']) >= 4
+    cells2sig = cells[mask_2sigma]
+    cells4sig = cells[mask_4sigma]
+
+    # get cell feature matrix from struct array 
+    cell_significance = np.expand_dims(abs(cells2sig['cell_E'] / cells2sig['cell_Sigma']),axis=1)
+    cell_features = cells2sig[['cell_xCells','cell_yCells','cell_zCells','cell_eta','cell_phi','cell_E','cell_Sigma','cell_pt']]
+    feature_matrix = rf.structured_to_unstructured(cell_features,dtype=np.float32)
+    feature_matrix = np.hstack((feature_matrix,cell_significance))
+
+    # get cell IDs
+    cell_ids_2 = np.array(cells2sig['cell_IdCells'].astype(int)) # THIS IS THE GRAND LIST OF CELLS WE CAN USE IN THIS EVENT
+    cell_ids_4 = np.array(cells4sig['cell_IdCells'].astype(int))
+
+    # get the neighbour arrays for the 2 sigma cells
+    cell_neighb_2 = neighbours_array[mask_2sigma]
+    src_cell_neighb_2 = src_neighbours_array[mask_2sigma]
+
+    # filter cell neighbours, only >2sigma and remove padded -999 values
+    actual_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_2), cell_neighb_2, np.nan) # actual cells we can use from cell_neighbours
+    actual_src_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_2), src_cell_neighb_2, np.nan) 
+
+    # find the cellID indices from cell_ids_2, what index are they in this event?
+    neighb_2sig_indices = np.searchsorted(cell_ids_2,actual_cell_neighb_2)
+    neighb_src_2sig_indices = np.searchsorted(cell_ids_2,actual_src_cell_neighb_2)
+
+    # use the nan array to again extract just the valid node indices we want
+    dst_node_indices = neighb_2sig_indices[~np.isnan(actual_cell_neighb_2)]
+    src_node_indices = neighb_src_2sig_indices[~np.isnan(actual_src_cell_neighb_2)]
+
+    edge_indices = np.stack((dst_node_indices,src_node_indices),axis=0)
+
+    return torch.tensor(feature_matrix,device=device), torch.tensor(edge_indices,device=device)
+
+
+
+
+
+
 class MyOwnDataset(torch_geometric.data.Dataset):
     """The Custom Calorimeter Cells Dataset
     Dataset to cluster point clouds of cells into distinct clusters.
@@ -46,7 +95,7 @@ class MyOwnDataset(torch_geometric.data.Dataset):
         Later on, raw_paths = raw_dir + / + raw_file_names
         '''
         # return osp.join(self.root, 'cells')
-        return "../../"
+        return "../"
 
     @property
     def processed_file_names(self):
@@ -62,9 +111,10 @@ class MyOwnDataset(torch_geometric.data.Dataset):
         '''
         Path to the output folder containing pyg graphs .pt files
         Later on, we save event graphs to processed_dir + *.pt
+        Checks made on this dir, if exists and full no processing
         '''
         # return osp.join(self.root, 'pyg')
-        return "./pyg/"
+        return "./data/pyg2sig/"
     
     def len(self):
         n_total_events = 0
@@ -99,26 +149,27 @@ class MyOwnDataset(torch_geometric.data.Dataset):
                 cells4sig = cells[mask_4sigma]
 
                 # get cell feature matrix from struct array 
-                cell_significance = np.expand_dims(abs(cells4sig['cell_E'] / cells4sig['cell_Sigma']),axis=1)
-                cell_features = cells4sig[['cell_xCells','cell_yCells','cell_zCells','cell_eta','cell_phi','cell_E','cell_Sigma','cell_pt']]
+                cell_significance = np.expand_dims(abs(cells2sig['cell_E'] / cells2sig['cell_Sigma']),axis=1)
+                cell_features = cells2sig[['cell_xCells','cell_yCells','cell_zCells','cell_eta','cell_phi','cell_E','cell_Sigma','cell_pt']]
                 
                 feature_matrix = rf.structured_to_unstructured(cell_features,dtype=np.float32)
                 feature_matrix = np.hstack((feature_matrix,cell_significance))
                 feature_tensor = torch.tensor(feature_matrix)
                 print("\tX tensor",feature_tensor.shape)
                 
-                cell_id_array  = np.expand_dims(cells4sig['cell_IdCells'],axis=1)
+                cell_id_array  = np.expand_dims(cells2sig['cell_IdCells'],axis=1)
                 cell_id_tensor = torch.tensor(cell_id_array.astype(np.int64))
 
                 # make sparse adjacency matrix using xyz coords
                 edge_indices = torch_geometric.nn.knn_graph(feature_tensor[:,:3],k=self.k,loop=False)
                 print("\t",edge_indices.shape)
                 # create pyg Data object for saving
-                event_graph  = torch_geometric.data.Data(x=feature_tensor,edge_index=edge_indices,y=cell_id_tensor) 
+                event_graph  = torch_geometric.data.Data(x=feature_tensor[:,[0,1,2,3,4,-1]],edge_index=edge_indices,y=cell_id_tensor) 
 
                 print("\tEvent graph made, saving... in here:", osp.join(self.processed_dir, f'event_graph_{idx}.pt'))
                 torch.save(event_graph, osp.join(self.processed_dir, f'event_graph_{idx}.pt'))
                 idx += 1
+            f1.close()
 
     def get(self, idx):
         data = torch.load(osp.join(self.processed_dir, f'event_graph_{idx}.pt'), weights_only=False)
@@ -128,8 +179,8 @@ class MyOwnDataset(torch_geometric.data.Dataset):
 
 if __name__ == "__main__":
 
-    # mydata = MyOwnDataset("root_dir")
-    mydata = MyOwnDataset(None)
+    mydata = MyOwnDataset("root_dir",k=2) # unhash to recreate dataset
+    # mydata = MyOwnDataset(None) # do not execute process 
     print("len",mydata.len(),len(mydata))
     print()
 
