@@ -5,7 +5,7 @@ import h5py
 import numpy as np
 import os
 import json
-
+import time
 
 
 # 
@@ -31,7 +31,7 @@ def make_one_A_matrix(path_to_h5_file, device=torch.device("cuda" if torch.cuda.
     cell_neighbours_json = open("./pyg/cell_neighbours.json", 'r')
     cell_neighbours = json.load(cell_neighbours_json)
 
-    kk = 0
+    kk = 2
     cells = f1["caloCells"]["2d"][kk] # event 0 cells
     mask_2sigma = abs(cells['cell_E'] / cells['cell_Sigma']) >= 2
     mask_4sigma = abs(cells['cell_E'] / cells['cell_Sigma']) >= 4
@@ -49,7 +49,7 @@ def make_one_A_matrix(path_to_h5_file, device=torch.device("cuda" if torch.cuda.
     dest_node_indices  = []
     for i in range(len(cell_ids_2)):
         cell_id = cell_ids_2[i].item()
-        print('ID ',cell_id)
+        # print('ID ',cell_id)
 
         # find cells in neighbouring buckets
         neighb = torch.tensor(cell_neighbours[str(cell_id)])
@@ -63,9 +63,9 @@ def make_one_A_matrix(path_to_h5_file, device=torch.device("cuda" if torch.cuda.
         # print(cell_ids_2[neighb_2sig_indices]) # check neighb_2sig
         # match this with cell i in sparse adj mat
         # source_node_idxs = np.repeat(i,len(neighb_2sig_indices))
-        source_node_idxs = torch.tensor([i])
-        source_node_idxs = source_node_idxs.repeat_interleave(repeats=len(neighb_2sig_indices)).to(dtype=torch.int32, device=device)
-
+        # source_node_idxs = torch.tensor([i])
+        # source_node_idxs = source_node_idxs.repeat_interleave(repeats=len(neighb_2sig_indices)).to(dtype=torch.int32, device=device)
+        source_node_idxs = torch.tensor([i])*torch.ones_like(neighb_2sig_indices)
         #append to overall arrays
         source_node_indices.append(source_node_idxs)
         dest_node_indices.append(neighb_2sig_indices)
@@ -82,7 +82,11 @@ def make_one_A_matrix(path_to_h5_file, device=torch.device("cuda" if torch.cuda.
 
     edge_index = torch.stack((row_indices,col_indices),dim=0)
     print('HERE should be [2,ei]',edge_index.shape)
-
+    print("FOR LOOP IMP")
+    print(row_indices)
+    print(col_indices)
+    print(row_indices.shape,col_indices.shape)
+    print(sum(row_indices),sum(col_indices))
     return adj_matrix
 
 def make_A_matrix_faster(path_to_h5_file,device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
@@ -100,7 +104,7 @@ def make_A_matrix_faster(path_to_h5_file,device=torch.device("cuda" if torch.cud
 
     return
 
-def make_A_faster(path_to_h5_file):
+def make_A_faster(path_to_h5_file, device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
     print("\t",path_to_h5_file)
     f1 = h5py.File(path_to_h5_file,"r")
     print("\t","./pyg/cell_neighbours.npy")
@@ -108,7 +112,7 @@ def make_A_faster(path_to_h5_file):
     src_cell_neighbours = np.load('./pyg/src_cell_neighbours.npy')
 
 
-    kk = 0
+    kk = 2
     cells = f1["caloCells"]["2d"][kk] # event 0 cells
     mask_2sigma = abs(cells['cell_E'] / cells['cell_Sigma']) >= 2
     mask_4sigma = abs(cells['cell_E'] / cells['cell_Sigma']) >= 4
@@ -116,17 +120,13 @@ def make_A_faster(path_to_h5_file):
     cells4sig = cells[mask_4sigma]
 
     # get cell IDs
-    cell_ids_2 = torch.tensor(cells2sig['cell_IdCells'].astype(int)) # THIS IS THE GRAND LIST OF CELLS WE CAN USE IN THIS EVENT
-    cell_ids_4 = torch.tensor(cells4sig['cell_IdCells'].astype(int))
-    num_nodes = cell_ids_2.shape[0]
+    cell_ids_2 = np.array(cells2sig['cell_IdCells'].astype(int)) # THIS IS THE GRAND LIST OF CELLS WE CAN USE IN THIS EVENT
+    cell_ids_4 = np.array(cells4sig['cell_IdCells'].astype(int))
 
     # get the neighbour arrays for the 2 sigma cells
     cell_neighb_2 = cell_neighbours[mask_2sigma]
-    print(cell_neighbours.shape, cell_neighb_2.shape)
     src_cell_neighb_2 = src_cell_neighbours[mask_2sigma]
-    print(src_cell_neighb_2.shape, src_cell_neighb_2.shape)
 
-    print(np.where(np.isin(cell_neighb_2,cell_ids_2), cell_neighb_2, np.nan))
     # filter cell neighbours, only >2sigma and remove padded -999 values
     actual_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_2), cell_neighb_2, np.nan) # actual cells we can use from cell_neighbours
     actual_src_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_2), src_cell_neighb_2, np.nan) 
@@ -136,17 +136,15 @@ def make_A_faster(path_to_h5_file):
     neighb_src_2sig_indices = np.searchsorted(cell_ids_2,actual_src_cell_neighb_2)
     print(neighb_2sig_indices.shape,neighb_src_2sig_indices.shape)
 
-
+    # use the nan array to again extract just the valid node indices we want
     dst_node_indices = neighb_2sig_indices[~np.isnan(actual_cell_neighb_2)]
     src_node_indices = neighb_src_2sig_indices[~np.isnan(actual_src_cell_neighb_2)]
-    print(neighb_2sig_indices.shape,actual_cell_neighb_2.shape,neighb_src_2sig_indices.shape,actual_src_cell_neighb_2.shape)
     print(dst_node_indices)
     print(src_node_indices)
     print(dst_node_indices.shape,src_node_indices.shape)
     print(sum(dst_node_indices),sum(src_node_indices))
 
     edge_index = np.stack((dst_node_indices,src_node_indices),axis=0)
-    print('HERE should be [2,ei]',edge_index.shape)
 
     return edge_index
 
@@ -157,18 +155,23 @@ if __name__=="__main__":
     print("2. All cells with |significance| > 2 are connected to cells in surrounding eta-phi buckets.")
 
 
-    print("Testing this function")
+    print("Numpy array functions")
+    a = time.perf_counter()
     A = make_A_faster("/Users/leonbozianu/work/phd/graph/dmon/user.cantel.34126190._000001.calocellD3PD_mc16_JZ4W.r10788.h5")
+    b = time.perf_counter()
+    print(f"Time taken (nump): {b-a}")
     print()
     print()
-    print()
+    print(A.shape)
+    print(A.shape[0]**2)
+
+    a = time.perf_counter()
+    A = make_one_A_matrix("/Users/leonbozianu/work/phd/graph/dmon/user.cantel.34126190._000001.calocellD3PD_mc16_JZ4W.r10788.h5")
+    b = time.perf_counter()
+    print(f"Time taken: {b-a}")
     print(A.shape)
     print(A.shape[0]**2)
     quit()
-
-    A = make_one_A_matrix("/Users/leonbozianu/work/phd/graph/dmon/user.cantel.34126190._000001.calocellD3PD_mc16_JZ4W.r10788.h5")
-    print(A.shape)
-    print(A.shape[0]**2)
     # print("FOR LOOP IMP")
     # print(row_indices)
     # print(col_indices)
