@@ -73,12 +73,6 @@ def make_one_A_matrix(path_to_h5_file, device=torch.device("cuda" if torch.cuda.
 
     row_indices = torch.cat(source_node_indices,dim=0)
     col_indices = torch.cat(dest_node_indices,dim=0)
-    print("FOR LOOP IMP")
-    print(row_indices)
-    print(col_indices)
-    print(row_indices.shape,col_indices.shape)
-    print(sum(row_indices),sum(col_indices))
-    quit()
 
     adj_matrix = torch.sparse_coo_tensor(
         indices=torch.stack([row_indices, col_indices]), 
@@ -106,8 +100,7 @@ def make_A_matrix_faster(path_to_h5_file,device=torch.device("cuda" if torch.cud
 
     return
 
-
-def make_A_faster(path_to_h5_file,device=torch.device("cuda" if torch.cuda.is_available() else "cpu")):
+def make_A_faster(path_to_h5_file):
     print("\t",path_to_h5_file)
     f1 = h5py.File(path_to_h5_file,"r")
     print("\t","./pyg/cell_neighbours.npy")
@@ -126,33 +119,18 @@ def make_A_faster(path_to_h5_file,device=torch.device("cuda" if torch.cuda.is_av
     cell_ids_2 = torch.tensor(cells2sig['cell_IdCells'].astype(int)) # THIS IS THE GRAND LIST OF CELLS WE CAN USE IN THIS EVENT
     cell_ids_4 = torch.tensor(cells4sig['cell_IdCells'].astype(int))
     num_nodes = cell_ids_2.shape[0]
-    print(cell_ids_2.shape,num_nodes)
 
     # get the neighbour arrays for the 2 sigma cells
     cell_neighb_2 = cell_neighbours[mask_2sigma]
     print(cell_neighbours.shape, cell_neighb_2.shape)
     src_cell_neighb_2 = src_cell_neighbours[mask_2sigma]
     print(src_cell_neighb_2.shape, src_cell_neighb_2.shape)
-    print(src_cell_neighb_2[0,:][cell_neighb_2[0,:]!=999])
-    print(cell_neighb_2[0,:][cell_neighb_2[0,:]!=999])
-    print(src_cell_neighb_2[0,:].shape)
-    print(cell_neighb_2[0,:].shape)
-    neighb_2sig_indices = np.searchsorted(cell_ids_2, cell_neighb_2)
-    print(neighb_2sig_indices)
-    print(neighb_2sig_indices.shape)
-    print(np.searchsorted(cell_ids_2,cell_neighb_2[0,:][cell_neighb_2[0,:]!=999]))
-    # neighb_2sig_indices = np.apply_along_axis(np.searchsorted, 0, cell_ids_2, cell_neighb_2)
-    # print(neighb_2sig_indices)
-    # print(neighb_2sig_indices.shape)
-    print(cell_ids_2)
-    print(cell_neighb_2)
-    print(src_cell_neighb_2)
+
     print(np.where(np.isin(cell_neighb_2,cell_ids_2), cell_neighb_2, np.nan))
     # filter cell neighbours, only >2sigma and remove padded -999 values
     actual_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_2), cell_neighb_2, np.nan) # actual cells we can use from cell_neighbours
     actual_src_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_2), src_cell_neighb_2, np.nan) 
-    print(np.searchsorted(cell_ids_2,actual_cell_neighb_2[0,:]))
-    print(np.searchsorted(cell_ids_2,actual_src_cell_neighb_2[0,:]))
+
     # find the cellID indices from cell_ids_2, what index are they in this event?
     neighb_2sig_indices = np.searchsorted(cell_ids_2,actual_cell_neighb_2)
     neighb_src_2sig_indices = np.searchsorted(cell_ids_2,actual_src_cell_neighb_2)
@@ -167,24 +145,10 @@ def make_A_faster(path_to_h5_file,device=torch.device("cuda" if torch.cuda.is_av
     print(dst_node_indices.shape,src_node_indices.shape)
     print(sum(dst_node_indices),sum(src_node_indices))
 
-    # print(cell_ids_2[0])
-    # print(cell_ids_2[1])
-    # print(cell_ids_2[9248])
-    print()
-    print()
-    print()
-    # a = [740294704, 740294706, 740294708, 740295216, 740295218, 740295220, 742391856,
-    # 742391858, 742391860, 742392368, 742392370, 742392372, 749994032, 749994034,
-    # 749994036, 749994544]
-    # print(a)
-    # print(np.searchsorted(a, 740294704))
-    # print(np.searchsorted(a, 740294706))
-    # print(torch.searchsorted(cell_ids_2, 740294704))
-    # print(torch.searchsorted(cell_ids_2, 740294706))
-    # print(np.searchsorted(a, [740294704,740294706]))
-    # print(torch.searchsorted(cell_ids_2, torch.tensor([740294704,740294706])))
+    edge_index = np.stack((dst_node_indices,src_node_indices),axis=0)
+    print('HERE should be [2,ei]',edge_index.shape)
 
-    return
+    return edge_index
 
 
 if __name__=="__main__":
@@ -205,6 +169,12 @@ if __name__=="__main__":
     A = make_one_A_matrix("/Users/leonbozianu/work/phd/graph/dmon/user.cantel.34126190._000001.calocellD3PD_mc16_JZ4W.r10788.h5")
     print(A.shape)
     print(A.shape[0]**2)
+    # print("FOR LOOP IMP")
+    # print(row_indices)
+    # print(col_indices)
+    # print(row_indices.shape,col_indices.shape)
+    # print(sum(row_indices),sum(col_indices))
+    # quit()
     # FOR LOOP IMP
     # tensor([   0,    0,    0,  ..., 9247, 9247, 9247], dtype=torch.int32)
     # tensor([   0,    1,    5,  ..., 6801, 6822, 9247])
