@@ -1,6 +1,6 @@
 import torch
 import torch_geometric
-from torch_geometric.nn import DMoNPooling, GCNConv
+from torch_geometric.nn import DMoNPooling, GCNConv, norm
 import torch.nn.functional as F
 
 # check which version of pytorch geometric - new updates mid-2024
@@ -8,11 +8,13 @@ class Net(torch.nn.Module):
     def __init__(self, in_channels, out_channels, hidden_channels=128):
         super().__init__()
 
+        self.norm = norm.GraphNorm(in_channels)
         self.conv1 = GCNConv(in_channels, hidden_channels)
         self.relu = torch.nn.ReLU()
         self.pool1 = DMoNPooling(hidden_channels,out_channels)
 
     def forward(self, x, edge_index, batch):
+        x = self.norm(x)
         x = self.conv1(x, edge_index)
         x = self.relu(x)
 
