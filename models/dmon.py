@@ -18,7 +18,7 @@ class Net(torch.nn.Module):
 
         x, mask = torch_geometric.utils.to_dense_batch(x, batch)
         adj = torch_geometric.utils.to_dense_adj(edge_index, batch)
-        
+
         s, x, adj, sp1, o1, c1 = self.pool1(x, adj, mask)
 
         return F.log_softmax(x, dim=-1), sp1+o1+c1, s
@@ -39,9 +39,7 @@ if __name__=="__main__":
 
     # Create a graph using KNN
     data = torch_geometric.data.Data(x=x)
-    # edge_index = torch_geometric.nn.knn_graph(x[:, :3],k=3)
     data.edge_index = torch_geometric.nn.knn_graph(x[:, :3],k=3)
-
     # Add batch information (single graph, so all nodes belong to batch 0)
     data.batch = torch.zeros(num_nodes, dtype=torch.long)
 
