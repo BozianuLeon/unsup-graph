@@ -80,25 +80,29 @@ if __name__=='__main__':
     torch.manual_seed(config["seed"])
 
     # generate data and place in geometric dataloaders
-    n_train = int(config["n_train"])
-    n_val   = int(config["n_train"]*config["val_frac"])
-    n_test  = int(config["n_train"]*config["test_frac"])
-    print('\ttrain / val / test size : ',n_train,'/',n_val,'/',n_test,'\n')
+    # n_train = int(config["n_train"])
+    # n_val   = int(config["n_train"]*config["val_frac"])
+    # n_test  = int(config["n_train"]*config["test_frac"])
+    # print('\ttrain / val / test size : ',n_train,'/',n_val,'/',n_test,'\n')
 
-    train_data = data.synthetic_cylinder_list(num_graphs=n_train,avg_num_nodes=config["n_nodes"],k=config["k"])
-    valid_data = data.synthetic_cylinder_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
-    test_data  = data.synthetic_cylinder_list(num_graphs=n_test,avg_num_nodes=config["n_nodes"],k=config["k"])
+    # train_data = data.synthetic_cylinder_list(num_graphs=n_train,avg_num_nodes=config["n_nodes"],k=config["k"])
+    # valid_data = data.synthetic_cylinder_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
+    # test_data  = data.synthetic_cylinder_list(num_graphs=n_test,avg_num_nodes=config["n_nodes"],k=config["k"])
 
     # train_data = data.synthetic_blobs_list(num_graphs=n_train,avg_num_nodes=config["n_nodes"],k=config["k"])
     # valid_data = data.synthetic_blobs_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
     # test_data  = data.synthetic_blobs_list(num_graphs=n_test,avg_num_nodes=config["n_nodes"],k=config["k"])
 
-    train_loader = DataLoader(train_data, batch_size=config["BS"], num_workers=config["NW"])
+    train_data = data.CaloDataset("root_dir",name="rad",rad=200)
+    valid_data = data.CaloDataset("root_dir",name="rad",rad=200)
+    test_data  = data.CaloDataset("root_dir",name="rad",rad=200)
+
+    train_loader = DataLoader(train_data, batch_size=config["BS"], num_workers=config["NW"],shuffle=True)
     val_loader   = DataLoader(valid_data, batch_size=config["BS"], num_workers=config["NW"])
     test_loader  = DataLoader(test_data, batch_size=config["BS"], num_workers=config["NW"])
 
     # instantiate model, optimizer
-    model = models.Net(4, config["n_clus"]).to(config["device"])
+    model = models.Net(6, config["n_clus"]).to(config["device"])
     total_params = sum(p.numel() for p in model.parameters())
     print(f'DMoN (single conv layer) \t{total_params:,} total parameters.\n')
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["LR"], weight_decay=config["WD"], amsgrad=True)  
@@ -111,7 +115,7 @@ if __name__=='__main__':
         val_loss   = test(val_loader, config["device"])
         print(f"Epoch: {epoch:03d}, Train Loss: {train_loss:.3f}, Val Loss: {val_loss:.3f}, Time: {time.perf_counter() - start:.3f}s")
 
-    model_name = "DMoN_blob_{}c_{}e".format(config["n_clus"],config["n_epochs"])
+    model_name = "DMoN_calo_{}_{}c_{}e".format(train_data.name,config["n_clus"],config["n_epochs"])
     print(f'\nSaving model now...\t{model_name}')
     torch.save(model.state_dict(), args.output_file+"/{}.pth".format(model_name))
 
@@ -137,20 +141,20 @@ if __name__=='__main__':
     ax = fig.add_subplot(131, projection='3d')
     ax.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], c='b', marker='o', label='Nodes')
     for src, dst in eval_graph.edge_index.t().tolist():
-        x_src, y_src, z_src, _ = eval_graph.x[src]
-        x_dst, y_dst, z_dst, _ = eval_graph.x[dst]
+        x_src, y_src, z_src, *feat = eval_graph.x[src]
+        x_dst, y_dst, z_dst, *feat = eval_graph.x[dst]
         ax.plot([x_src, x_dst], [y_src, y_dst], [z_src, z_dst], c='r')
     ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Input Graph with KNN 3 Edges')
 
     ax2 = fig.add_subplot(132, projection='3d')
-    scatter = ax2.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], s=eval_graph.x[:, 3]*8, c=predicted_classes, marker='o')
+    scatter = ax2.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], s=eval_graph.x[:, -1]*8, c=predicted_classes, marker='o')
     labels = [f"{value}: ({count})" for value,count in zip(unique_values, counts)]
     ax2.legend(handles=scatter.legend_elements(num=None)[0],labels=labels,title=f"Classes {len(unique_values)}/{config['n_clus']}",bbox_to_anchor=(1.07, 0.25),loc='lower left')
     ax2.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'DMoN Output Graph')
 
     ax3 = fig.add_subplot(133, projection='3d')
-    scatter = ax3.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], s=eval_graph.x[:, 3]*8, c=eval_graph.y, marker='o')
+    scatter = ax3.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], s=eval_graph.x[:, -1]*8, c=eval_graph.y, marker='o')
     ax3.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'GT Graph')
     plt.show()
-    fig.savefig(f"plots/results/synthetic_data_knn_dmon_{config['n_clus']}clus.png", bbox_inches="tight")
+    fig.savefig(f"plots/results/data_knn_dmon_{config['n_clus']}clus.png", bbox_inches="tight")
     print()
