@@ -27,29 +27,18 @@ def make_edge_LUT(path_to_h5_file, output_dir='./'):
     f1 = h5py.File(path_to_h5_file,"r")
 
     cells = f1["caloCells"]["2d"][0] # event 0 cells
-    print(cells.dtype)
 
     cell_etas = cells['cell_eta']
     cell_phis = cells['cell_phi']
     cell_ids  = cells['cell_IdCells']
     bins_x = np.linspace(min(cell_etas), max(cell_etas)+EPS, int((max(cell_etas) - min(cell_etas)) / 0.1 + 1))
     bins_y = np.linspace(min(cell_phis), max(cell_phis)+EPS, int((max(cell_phis) - min(cell_phis)) / ((2*np.pi)/64) + 1))
-    print('bins',bins_x.shape,bins_y.shape)
     x_indices = np.digitize(cell_etas, bins_x,right=False) # gives right hand bin edges
     y_indices = np.digitize(cell_phis, bins_y,right=False) # gives right hand bin edges
-
-    print(x_indices)
-    print(y_indices)
-    print()
-
 
     for i in range(len(cell_ids)):
         print(i,f'/ {len(cell_ids)}')
         idx = int(cell_ids[i])
-        print('cell ID',idx)
-        print('cell eta,phi',cell_etas[i],cell_phis[i])
-        print('cell bin x ID',x_indices[i],'[',bins_x[x_indices[i]-1],',',bins_x[x_indices[i]],']')
-        print('cell bin y ID',y_indices[i],'[',bins_y[y_indices[i]-1],',',bins_y[y_indices[i]],']')
 
         neighbour_bucket_mask = (x_indices==x_indices[i]-1) & (y_indices==y_indices[i]-1) \
                               | (x_indices==x_indices[i]-1) & (y_indices==y_indices[i]  ) \
@@ -60,16 +49,8 @@ def make_edge_LUT(path_to_h5_file, output_dir='./'):
                               | (x_indices==x_indices[i]+1) & (y_indices==y_indices[i]-1) \
                               | (x_indices==x_indices[i]+1) & (y_indices==y_indices[i]  ) \
                               | (x_indices==x_indices[i]+1) & (y_indices==y_indices[i]+1) 
-        # cell_etas_in_same_bin = cell_etas[neighbour_bucket_mask]
-        # cell_phis_in_same_bin = cell_phis[neighbour_bucket_mask]
-        cell_ids_in_same_bin = cell_ids[neighbour_bucket_mask]
-        # print(cell_etas_in_same_bin)
-        # print(cell_phis_in_same_bin)
-        # print(cell_ids_in_same_bin)
-        # print(len(cell_etas_in_same_bin))
-        # print(len(cell_phis_in_same_bin))
-        print('cells in neighbour buckets ',len(cell_ids_in_same_bin))
 
+        cell_ids_in_same_bin = cell_ids[neighbour_bucket_mask]
         cell_neighbours_dict[idx] = cell_ids_in_same_bin.tolist() # list of all cells in neighbouring buckets
 
     f1.close()
@@ -85,16 +66,16 @@ def make_edge_npy_LUT(path_to_h5_file, output_dir='./'):
     f1 = h5py.File(path_to_h5_file,"r")
 
     cells = f1["caloCells"]["2d"][0] # event 0 cells
-    print(cells.dtype)
+
     cell_etas = cells['cell_eta']
     cell_phis = cells['cell_phi']
     cell_ids  = cells['cell_IdCells']
-    print("Minimum cell ID, safe to pad with 99",min(cell_ids))
+
     bins_x = np.linspace(min(cell_etas), max(cell_etas)+EPS, int((max(cell_etas) - min(cell_etas)) / 0.1 + 1))
     bins_y = np.linspace(min(cell_phis), max(cell_phis)+EPS, int((max(cell_phis) - min(cell_phis)) / ((2*np.pi)/64) + 1))
-    print('bins',bins_x.shape,bins_y.shape)
-    x_indices = np.digitize(cell_etas, bins_x,right=False) # gives right hand bin edges
-    y_indices = np.digitize(cell_phis, bins_y,right=False) # gives right hand bin edges
+
+    x_indices = np.digitize(cell_etas, bins_x,right=False) 
+    y_indices = np.digitize(cell_phis, bins_y,right=False) 
     
     big_storage_array = np.empty((len(cell_ids),750),dtype=int)
     source_node_array = np.empty((len(cell_ids),750),dtype=int)
@@ -106,6 +87,7 @@ def make_edge_npy_LUT(path_to_h5_file, output_dir='./'):
         print('cell eta,phi',cell_etas[i],cell_phis[i])
         print('cell bin x ID',x_indices[i],'[',bins_x[x_indices[i]-1],',',bins_x[x_indices[i]],']')
         print('cell bin y ID',y_indices[i],'[',bins_y[y_indices[i]-1],',',bins_y[y_indices[i]],']')
+
         neighbour_bucket_mask = (x_indices==x_indices[i]-1) & (y_indices==y_indices[i]-1) \
                               | (x_indices==x_indices[i]-1) & (y_indices==y_indices[i]  ) \
                               | (x_indices==x_indices[i]-1) & (y_indices==y_indices[i]+1) \
@@ -126,7 +108,6 @@ def make_edge_npy_LUT(path_to_h5_file, output_dir='./'):
         max_number_neighbours.append(len(cell_ids_in_same_bin))
     
     f1.close()
-    print('Maximum number of neighbours any cell could have',len(max_number_neighbours),max(max_number_neighbours))
 
     print('Saving numpy array to .npy file')
     np.save(output_dir+'cell_neighbours.npy', big_storage_array)    # .npy extension is added if not given

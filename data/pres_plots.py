@@ -98,30 +98,6 @@ if __name__ == "__main__":
     import plotly.graph_objects as go
     import plotly.io as pio
 
-    # Create a 3D scatter plot with Plotly
-    fig = go.Figure(data=[go.Scatter3d(x=cells4sig['cell_xCells'],y=cells4sig['cell_zCells'],  z=cells4sig['cell_yCells'],mode='markers',marker=dict(size=4,color='blue',opacity=0.8),name='Cells')])
-
-    # Update the layout
-    fig.update_layout(
-        title='Calorimeter Cell Point Cloud',
-        scene=dict(
-            xaxis_title='X',
-            yaxis_title='Z',
-            zaxis_title='Y',
-        ),
-        width=1000,
-        height=800,
-        margin=dict(l=30, r=0, b=30, t=0)
-    )
-
-    # Save the plot as an HTML file
-    html_file_path = 'calorimeter_3d_plot.html'
-    pio.write_html(fig, file=html_file_path, auto_open=True)
-
-    print(f"Plot saved and opened as {html_file_path}")
-
-
-##########################################################################################################################################################################################
 
 
     # Create a 3D scatter plot with Plotly
