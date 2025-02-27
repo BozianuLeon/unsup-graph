@@ -1,4 +1,10 @@
+data/pyg*
+data/knn
+data/rad
+data/bucket
+data/custom
 plots/*
-data/pyg/
+saved_models/
+*.html
 *.pth
 .DS_Store
