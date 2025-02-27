@@ -153,7 +153,7 @@ def make_A_faster(path_to_h5_file, device=torch.device("cuda" if torch.cuda.is_a
 
 
 if __name__=="__main__":
-    print("In the process of making teh graph adjacency matrix according to:")
+    print("In the process of making the graph adjacency matrix according to:")
     print("1. All cells with |significance| > 4 are fully connected. All to all.")
     print("2. All cells with |significance| > 2 are connected to cells in surrounding eta-phi buckets.")
 

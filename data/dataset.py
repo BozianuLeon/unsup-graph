@@ -13,11 +13,26 @@ import os.path as osp
 
 
 def get_bucket_edges(cells2sig, mask2sig, neighbours_array, src_neighbours_array):
+    '''
+    Function to calculate edges between nodes in neighbouring buckets of eta,phi.
+    No limit on number of edges, inputs are a subset of all cells. Max number of 
+    neighbours is ~750.
+    Inputs:
+        cells2sig: numpy struct array, containing cell information for cells with 
+            |significance|>2 
+        mask2sig: numpy boolean array, True/False array used to mask cells failing
+            the significance threshold
+        neighbours_array: numpy.array, LUT calculating fixed cell neighbours based on 
+            eta-phi buckets
+        src_neighbours_array: numpy.array, LUT as neighbours_array containing the source
+            nodes to match the dest nodes to make edge_indices in sparse tensor format
+    Outputs:
+        edge_indices: torch.tensor, tensor containing sparse adjacency matrix indices for
+            cells passing significance threshold, shape [2,num_edges]
+    '''
 
-
-    # get cell IDs
-    cell_ids_2 = np.array(cells2sig['cell_IdCells'].astype(int)) # THIS IS THE GRAND LIST OF CELLS WE CAN USE IN THIS EVENT
-    cell_ids_2_array = np.expand_dims(cell_ids_2,axis=1) # we will also return the cell IDs in the "y" attribute pytorch geometric
+    # get cell IDs, used to mask the cells we have access to for this event
+    cell_ids_2 = np.array(cells2sig['cell_IdCells'].astype(int))
 
     # get the neighbour arrays for the 2 sigma cells
     cell_neighb_2 = neighbours_array[mask2sig]
@@ -62,8 +77,8 @@ class EdgeBuilder(torch.nn.Module):
 
         elif self.name=="bucket":
             self.builder = get_bucket_edges
-            self.args = {"neighbours_array"     : np.load('./pyg/cell_neighbours.npy'),
-                         "src_neighbours_array" : np.load('./pyg/src_cell_neighbours.npy')}
+            self.args = {"neighbours_array"     : np.load('./data/pyg/cell_neighbours.npy'),
+                         "src_neighbours_array" : np.load('./data/pyg/src_cell_neighbours.npy')}
 
         elif self.name=="custom":
             # to be implemented 
@@ -78,8 +93,6 @@ class EdgeBuilder(torch.nn.Module):
         cells = h5group_cells[event_no] 
         mask_2sigma = abs(cells['cell_E'] / cells['cell_Sigma']) >= 2
         cells2sig = cells[mask_2sigma]
-        # mask_4sigma = abs(cells['cell_E'] / cells['cell_Sigma']) >= 4
-        # cells4sig = cells[mask_4sigma]
 
         # get cell feature matrix from struct array 
         cell_significance = np.expand_dims(abs(cells2sig['cell_E'] / cells2sig['cell_Sigma']),axis=1)
@@ -103,7 +116,7 @@ class EdgeBuilder(torch.nn.Module):
 
 
 
-class MyOwnDataset(torch_geometric.data.Dataset):
+class CaloDataset(torch_geometric.data.Dataset):
     """The Custom Calorimeter Cells Dataset
     Dataset to cluster point clouds of cells into distinct clusters.
 
@@ -118,9 +131,9 @@ class MyOwnDataset(torch_geometric.data.Dataset):
     """
 
     def __init__(self, root, name="knn", k=None, rad=None, transform=None):
+        self.name = name
         self.k = k
         self.rad = rad
-        self.name = name
         self.builder = EdgeBuilder(name=self.name,k=self.k,rad=self.rad)
         print('1.',self.__dict__)
         print('2. raw  dir',self.raw_dir)
@@ -212,9 +225,11 @@ class MyOwnDataset(torch_geometric.data.Dataset):
 
 
 if __name__ == "__main__":
+    # intended to be run from /unsup-graph/ upper directory
 
     # mydata = MyOwnDataset("root_dir",name="knn",k=5) # unhash to recreate dataset
-    mydata = MyOwnDataset("root_dir",name="rad",rad=200) # unhash to recreate dataset
+    # mydata = MyOwnDataset("root_dir",name="rad",rad=200) # unhash to recreate dataset
+    mydata = MyOwnDataset("root_dir",name="bucket") # unhash to recreate dataset
     print("len",mydata.len(),len(mydata))
     print()
 
@@ -233,5 +248,5 @@ if __name__ == "__main__":
         ax.plot([x_src, x_dst], [z_src, z_dst], [y_src, y_dst], c='r')
     ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Example Event Graph')
     plt.show()
-    fig.savefig(f"../plots/inputs/ex-event-{event_no}.png", bbox_inches="tight")
+    fig.savefig(f"./plots/inputs/ex-event-{event_no}.png", bbox_inches="tight")
 
