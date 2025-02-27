@@ -93,9 +93,9 @@ if __name__=='__main__':
     # valid_data = data.synthetic_blobs_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
     # test_data  = data.synthetic_blobs_list(num_graphs=n_test,avg_num_nodes=config["n_nodes"],k=config["k"])
 
-    train_data = data.MyOwnDataset("root_dir",name="rad",rad=200)
-    valid_data = data.MyOwnDataset("root_dir",name="rad",rad=200)
-    test_data  = data.MyOwnDataset("root_dir",name="rad",rad=200)
+    train_data = data.CaloDataset("root_dir",name="rad",rad=200)
+    valid_data = data.CaloDataset("root_dir",name="rad",rad=200)
+    test_data  = data.CaloDataset("root_dir",name="rad",rad=200)
 
     train_loader = DataLoader(train_data, batch_size=config["BS"], num_workers=config["NW"],shuffle=True)
     val_loader   = DataLoader(valid_data, batch_size=config["BS"], num_workers=config["NW"])
