@@ -6,6 +6,7 @@ import os
 import time
 import argparse
 import numpy as np
+import matplotlib
 from matplotlib import pyplot as plt
 
 import models
@@ -49,16 +50,20 @@ if __name__=='__main__':
     n_val   = int(config["n_train"]*config["val_frac"])
     n_test  = int(config["n_train"]*config["test_frac"])
     print('\ttrain / val / test size : ',n_train,'/',n_val,'/',n_test,'\n')
-    train_data = data.synthetic_blobs_list(num_graphs=n_train,avg_num_nodes=config["n_nodes"],k=config["k"])
-    valid_data = data.synthetic_blobs_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
-    test_data  = data.synthetic_blobs_list(num_graphs=n_test,avg_num_nodes=config["n_nodes"],k=config["k"])
+    # train_data = data.synthetic_blobs_list(num_graphs=n_train,avg_num_nodes=config["n_nodes"],k=config["k"])
+    # valid_data = data.synthetic_blobs_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
+    # test_data  = data.synthetic_blobs_list(num_graphs=n_test,avg_num_nodes=config["n_nodes"],k=config["k"])
+
+    train_data = data.MyOwnDataset(None)
+    valid_data = data.MyOwnDataset(None)
+    test_data  = data.MyOwnDataset(None)
 
     train_loader = DataLoader(train_data, batch_size=config["BS"], num_workers=config["NW"])
     val_loader   = DataLoader(valid_data, batch_size=config["BS"], num_workers=config["NW"])
     test_loader  = DataLoader(test_data, batch_size=config["BS"], num_workers=config["NW"])
 
     # instantiate model
-    model = models.Net(3, config["n_clus"]).to(config["device"])
+    model = models.Net(4, config["n_clus"]).to(config["device"])
     total_params = sum(p.numel() for p in model.parameters())
     print(f'DMoN (single conv layer) \t{total_params:,} total parameters.\n')
     model_name = "DMoN_blob_{}c_{}e".format(config["n_clus"],config["n_epochs"])
@@ -81,24 +86,81 @@ if __name__=='__main__':
             print(step)
             data = data.to(config["device"])
             pred, tot_loss, clus_ass = model(data.x,data.edge_index,data.batch)
-            print("pred",pred.shape)
-            print("loss",tot_loss.shape,tot_loss)
-            print("cluster",clus_ass.shape)
+            # print("loss",tot_loss.shape,tot_loss)
+            # print("pred",pred.shape)
+            # print("cluster",clus_ass.shape)
             node_features = torch_geometric.utils.unbatch(data.x,data.batch)
+            # print("node",data.x.shape)
+            # print('node 0',node_features[0].shape)
+            # print('node 1',node_features[1].shape)
+            # print('node 2',node_features[2].shape)
 
             # make lists for later padding
             total_pred, total_clus, total_loss = list(), list(), list()
             event_nos, feat_mats = list(), list()
-            for b in range(config["BS"]):
+            for batch_idx in range(config["BS"]):
                 # remove from GPU 
-                pred_i = pred[b].detach().cpu().numpy()
-                clus_i = clus_ass[b].detach().cpu()
+                pred_i = pred[batch_idx].detach().cpu().numpy()
+                clus_i = clus_ass[batch_idx].detach().cpu()
+                # print('\tclus_i',clus_i.shape)
+                # print('\tclus_1',clus_ass[batch_idx+1].detach().cpu().shape)
+                # print('\tclus_2',clus_ass[batch_idx+2].detach().cpu().shape)
+                clus_i = clus_i[~np.isnan(clus_i).any(axis=1).bool()] # remove nan values
+                # print('\tclus_i',clus_i.shape)
+                # print('\tclus_1',clus_ass[batch_idx+1].detach().cpu()[~np.isnan(clus_ass[batch_idx+1].detach().cpu()).any(axis=1).bool()].shape)
+                # print('\tclus_2',clus_ass[batch_idx+2].detach().cpu()[~np.isnan(clus_ass[batch_idx+2].detach().cpu()).any(axis=1).bool()].shape)
                 # loss_i = tot_loss[b]
-                x_i = node_features[b].detach().cpu().numpy()
+                x_i = node_features[batch_idx].detach().cpu().numpy()
 
                 # force each node to its most likely cluster, no soft assignment
                 predicted_classes = clus_i.squeeze().argmax(dim=1).numpy()
-                print(predicted_classes.shape)
+                print("\tAlready out of shape here",x_i.shape,pred_i.shape,clus_i.shape,predicted_classes.shape)
+                unique_values, counts = np.unique(predicted_classes, return_counts=True)
+                print(f"\t{len(unique_values)} clusters formed, potential max {config['n_clus']}")
+                for value, count in zip(unique_values, counts):
+                    print(f"\tCluster {value}: {count} occurrences")
+
+                #####################################################################
+                fig = plt.figure(figsize=(10, 6))
+                edge_index = torch_geometric.utils.unbatch_edge_index(data.edge_index,data.batch)
+                edg_i = edge_index[batch_idx]
+                unique_values, counts = np.unique(predicted_classes, return_counts=True)
+                ax = fig.add_subplot(121, projection='3d')
+                ax.scatter(x_i[:, 0], x_i[:, 1], x_i[:, 2], s=x_i[:, -1]/3, c='b', marker='o', label='Nodes')
+                for src, dst in edg_i.t().tolist():
+                    x_src, y_src, z_src, *feat = x_i[src]
+                    x_dst, y_dst, z_dst, *feat = x_i[dst]
+                    ax.plot([x_src, x_dst], [y_src, y_dst], [z_src, z_dst], c='r')
+                ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Input Graph with KNN 3 Edges')
+
+                ax2 = fig.add_subplot(122, projection='3d')
+                print('\tFinal here',x_i.shape, edg_i.shape,predicted_classes.shape)
+                cmap = matplotlib.colormaps['Dark2']
+                scatter = ax2.scatter(x_i[:, 0], x_i[:, 1], x_i[:, 2], s=x_i[:, -1]/3, c=predicted_classes, marker='o', cmap=cmap) #Dark2
+                labels = [f"{value}: ({count})" for value,count in zip(unique_values, counts)]
+                ax2.legend(handles=scatter.legend_elements(num=None)[0],labels=labels,title=f"Classes {len(unique_values)}/{config['n_clus']}",bbox_to_anchor=(1.07, 0.25),loc='lower left')
+                ax2.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'DMoN Output Graph')
+                x_axis = ax2.get_xlim()
+                y_axis = ax2.get_ylim()
+                z_axis = ax2.get_zlim()
+                plt.show()
+                fig.savefig(f"plots/results/data_{step*batch_idx+batch_idx}_knn_dmon_{config['n_clus']}c_{config['n_epochs']}e.png", bbox_inches="tight")
+                
+                # plot individual clusters
+                i_want_cluster = input('Enter cluster number to inspect (type q for exit):')
+                while i_want_cluster!="q":
+                    cluster_i_mask = predicted_classes == int(i_want_cluster)
+                    print(cluster_i_mask)
+                    fig = plt.figure(figsize=(10, 6))
+                    ax1 = fig.add_subplot(111, projection='3d')
+                    scatter = ax1.scatter(x_i[cluster_i_mask, 0], x_i[cluster_i_mask, 1], x_i[cluster_i_mask, 2], s=x_i[cluster_i_mask, -1], marker='o', c="crimson")
+                    ax1.set(xlabel='X',ylabel='Y',zlabel='Z',xlim=x_axis,ylim=y_axis,zlim=z_axis,title=f'DMoN Output Graph Cluster {i_want_cluster}')
+                    plt.show()
+                    i_want_cluster = input('Enter cluster number to inspect (type q for exit):')
+
+                quit()
+                #####################################################################
+                
                 total_pred.append(pred_i)
                 total_clus.append(clus_i)
                 # total_loss.append(loss_i)
