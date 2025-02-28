@@ -5,6 +5,7 @@ import h5py
 import numpy as np
 import numpy.lib.recfunctions as rf
 
+import argparse
 import os.path as osp
 
 
@@ -58,11 +59,10 @@ def get_bucket_edges(cells2sig, mask2sig, neighbours_array, src_neighbours_array
 
 
 class EdgeBuilder(torch.nn.Module):
-    def __init__(self, name, signif_cut=2, feature_columns=[0,1,2,3,4], k=None, rad=None):
+    def __init__(self, name, signif_cut=2, k=None, rad=None):
         super().__init__()
         self.name = name # knn, rad, bucket, custom
         self.signif_cut = signif_cut
-        self.feat_cols = feature_columns
         self.k = k
         self.rad = rad
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -124,20 +124,25 @@ class CaloDataset(torch_geometric.data.Dataset):
         root (str): Root directory where the dataset should be saved.
                     If root is not specified (None), no processing
         k    (int): K-nearest neighbour edhes. Degree of each node
+        rad  (float): Threshold used in radial graph
+        out  (str): Path to output directory, will have /data/.../ appended
         transform (callable, optional): A function/transform that takes in an
             :obj:`torch_geometric.data.Data` object and returns a transformed
             version. The data object will be transformed before every access.
             (default: :obj:`None`)
     """
 
-    def __init__(self, root, name="knn", k=None, rad=None, transform=None):
+    def __init__(self, root, name="knn", k=None, rad=None, out=None, transform=None):
         self.name = name
+        self.root = root
         self.k = k
         self.rad = rad
         self.builder = EdgeBuilder(name=self.name,k=self.k,rad=self.rad)
+        self.out = out
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print('1.',self.__dict__)
-        print('2. raw  dir',self.raw_dir)
-        print('3. root dir',root)
+        print('2. root dir',root)
+        print('3. raw  dir',self.raw_dir)
         super().__init__(root, transform)
 
 
@@ -146,7 +151,8 @@ class CaloDataset(torch_geometric.data.Dataset):
         '''
         List of the h5 files to be opened during processing
         '''
-        return ["user.cantel.34126190._000001.calocellD3PD_mc16_JZ4W.r10788.h5"]
+        # return ['user.lbozianu.42998779._000026.calocellD3PD_mc21_14TeV_JZ4.r14365.h5']
+        return ["user.lbozianu.42998779._000085.calocellD3PD_mc21_14TeV_JZ4.r14365.h5"]
 
     @property
     def raw_dir(self):
@@ -154,8 +160,7 @@ class CaloDataset(torch_geometric.data.Dataset):
         Path to the raw cell data folder containing h5 files
         Later on, raw_paths = raw_dir + / + raw_file_names
         '''
-        # return osp.join(self.root, 'cells')
-        return "../"
+        return osp.join(self.root, 'cells/JZ4/user.lbozianu')
 
     @property
     def processed_file_names(self):
@@ -174,13 +179,13 @@ class CaloDataset(torch_geometric.data.Dataset):
         Checks made on this dir, if exists and full no processing
         '''
         file_structure = {
-            "custom" :   f"./data/custom/pyg2sig",
-            "bucket" :   f"./data/bucket/pyg2sig",
-            "knn"    :   f"./data/knn/{self.k}/pyg2sig",
-            "rad"    :   f"./data/rad/{self.rad}/pyg2sig" 
+            "custom" :   f"/data/custom/pyg2sig",
+            "bucket" :   f"/data/bucket/pyg2sig",
+            "knn"    :   f"/data/knn/{self.k}/pyg2sig",
+            "rad"    :   f"/data/rad/{self.rad}/pyg2sig" 
         }
         # return osp.join(self.root, 'pyg')
-        return file_structure[self.name]
+        return self.out + file_structure[self.name]
     
     def len(self):
         n_total_events = 0
@@ -219,17 +224,24 @@ class CaloDataset(torch_geometric.data.Dataset):
             f1.close()
 
     def get(self, idx):
-        data = torch.load(osp.join(self.processed_dir, f'event_graph_{idx}.pt'), weights_only=False)
+        data = torch.load(osp.join(self.processed_dir, f'event_graph_{idx}.pt'), weights_only=False,map_location=torch.device(self.device))
         return data
 
 
 
 if __name__ == "__main__":
-    # intended to be run from /unsup-graph/ upper directory
+    # intended to be run from /unsup-graph/ upper directory   
 
-    # mydata = MyOwnDataset("root_dir",name="knn",k=5) # unhash to recreate dataset
-    # mydata = MyOwnDataset("root_dir",name="rad",rad=200) # unhash to recreate dataset
-    mydata = MyOwnDataset("root_dir",name="bucket") # unhash to recreate dataset
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--root', type=str, required=True, help='Path to top-level h5 directory',)
+    parser.add_argument('--name', type=str, required=True, help='Name of edge building scheme (knn, rad, bucket, custom)')
+    parser.add_argument('-k', nargs='?', const=None, default=None, type=int, help='K-nearest neighbours value to be used only in knn graph')
+    parser.add_argument('-r', nargs='?', const=None, default=None, type=int, help='Radius value to be used only in radial graph')
+    parser.add_argument('-o','--out',nargs='?', const='./cache/', default='./cache/', type=str, help='Path to processed folder containing .pt graphs',)
+    args = parser.parse_args()
+
+    # instantiate a dataset, if not already present will be created via process() call
+    mydata = CaloDataset(root=args.root,name=args.name,k=args.k,rad=args.r, out=args.out)
     print("len",mydata.len(),len(mydata))
     print()
 
@@ -240,7 +252,6 @@ if __name__ == "__main__":
     import matplotlib.pyplot as plt
     fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(111, projection='3d')
-    # remember that XZY makes the calorimeter appear the "correct" way up
     ax.scatter(event0.x[:, 0], event0.x[:, 2], event0.x[:, 1], s=event0.x[:, -1], c='b', marker='o')
     for src, dst in event0.edge_index.t().tolist():
         x_src, y_src, z_src, *feat = event0.x[src]

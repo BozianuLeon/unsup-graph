@@ -108,6 +108,7 @@ def make_edge_npy_LUT(path_to_h5_file, output_dir='./'):
         max_number_neighbours.append(len(cell_ids_in_same_bin))
     
     f1.close()
+    if not os.path.exists(output_dir): os.makedirs(output_dir)
 
     print('Saving numpy array to .npy file')
     np.save(output_dir+'cell_neighbours.npy', big_storage_array)    # .npy extension is added if not given
@@ -125,4 +126,5 @@ if __name__=="__main__":
 
 
     # make_edge_LUT("/Users/leonbozianu/work/phd/graph/dmon/user.cantel.34126190._000001.calocellD3PD_mc16_JZ4W.r10788.h5",output_dir="./pyg/")
-    make_edge_npy_LUT("/Users/leonbozianu/work/phd/graph/dmon/user.cantel.34126190._000001.calocellD3PD_mc16_JZ4W.r10788.h5",output_dir="./pyg/")
+    # make_edge_npy_LUT("/Users/leonbozianu/work/phd/graph/dmon/user.cantel.34126190._000001.calocellD3PD_mc16_JZ4W.r10788.h5",output_dir="./pyg/")
+    make_edge_npy_LUT("/srv/beegfs/scratch/shares/atlas_caloM/mu_200_truthjets/cells/JZ4/user.lbozianu/user.lbozianu.42998779._000085.calocellD3PD_mc21_14TeV_JZ4.r14365.h5",output_dir="./pyg/")
