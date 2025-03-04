@@ -13,11 +13,17 @@ import data
 
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--root', nargs='?', const='./', default='./', type=str, help='Path to top-level h5 directory',)
+parser.add_argument('--name', type=str, required=True, help='Name of edge building scheme (knn, rad, bucket, custom)')
+parser.add_argument('-k', nargs='?', const=None, default=None, type=int, help='K-nearest neighbours value to be used only in knn graph')
+parser.add_argument('-r', nargs='?', const=None, default=None, type=int, help='Radius value to be used only in radial graph')
+parser.add_argument('--graph_dir', nargs='?', const='./', default='./', type=str, help='Path to processed folder containing .pt graphs',)
+
+
 parser.add_argument('-e','--epochs', type=int, required=True, help='Number of training epochs',)
 parser.add_argument('-bs','--batch_size', nargs='?', const=8, default=8, type=int, help='Batch size to be used')
 parser.add_argument('-nw','--num_workers', nargs='?', const=2, default=2, type=int, help='Number of worker CPUs')
 parser.add_argument('-nc','--num_clusters', nargs='?', const=4, default=4, type=int, help='Number of (max) clusters DMoN can predict')
-parser.add_argument('-k', nargs='?', const=3, default=3, type=int, help='k nearest neighbours integer')
 parser.add_argument('-out','--output_file',nargs='?', const='./saved_models/', default='./saved_models/', type=str, help='Path to saved_models directory',)
 args = parser.parse_args()
 
@@ -69,7 +75,10 @@ if __name__=='__main__':
         "val_frac"   : 0.25,
         "test_frac"  : 0.15,
         "n_nodes"    : 1000,
+        "builder"    : args.name,
+        "graph_dir"  : args.graph_dir,
         "k"          : args.k,
+        "r"          : args.r,
         "NW"         : args.num_workers,
         "BS"         : args.batch_size,
         "LR"         : 0.01,
@@ -78,12 +87,12 @@ if __name__=='__main__':
         "n_epochs"   : int(args.epochs),
     }
     torch.manual_seed(config["seed"])
-
+    torch.multiprocessing.set_start_method('spawn') #https://discuss.pytorch.org/t/runtimeerror-cannot-re-initialize-cuda-in-forked-subprocess-to-use-cuda-with-multiprocessing-you-must-use-the-spawn-start-method/14083/3
+    
     # generate data and place in geometric dataloaders
     # n_train = int(config["n_train"])
     # n_val   = int(config["n_train"]*config["val_frac"])
     # n_test  = int(config["n_train"]*config["test_frac"])
-    # print('\ttrain / val / test size : ',n_train,'/',n_val,'/',n_test,'\n')
 
     # train_data = data.synthetic_cylinder_list(num_graphs=n_train,avg_num_nodes=config["n_nodes"],k=config["k"])
     # valid_data = data.synthetic_cylinder_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
@@ -92,10 +101,12 @@ if __name__=='__main__':
     # train_data = data.synthetic_blobs_list(num_graphs=n_train,avg_num_nodes=config["n_nodes"],k=config["k"])
     # valid_data = data.synthetic_blobs_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
     # test_data  = data.synthetic_blobs_list(num_graphs=n_test,avg_num_nodes=config["n_nodes"],k=config["k"])
-
-    train_data = data.CaloDataset("root_dir",name="rad",rad=200)
-    valid_data = data.CaloDataset("root_dir",name="rad",rad=200)
-    test_data  = data.CaloDataset("root_dir",name="rad",rad=200)
+ 
+ 
+    train_data = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
+    valid_data = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
+    test_data  = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
+    print('\ttrain / val / test size : ',len(train_data),'/',len(valid_data),'/',len(test_data),'\n')
 
     train_loader = DataLoader(train_data, batch_size=config["BS"], num_workers=config["NW"],shuffle=True)
     val_loader   = DataLoader(valid_data, batch_size=config["BS"], num_workers=config["NW"])
@@ -117,11 +128,12 @@ if __name__=='__main__':
 
     model_name = "DMoN_calo_{}_{}c_{}e".format(train_data.name,config["n_clus"],config["n_epochs"])
     print(f'\nSaving model now...\t{model_name}')
+    if not os.path.exists(args.output_file): os.makedirs(args.output_file)
     torch.save(model.state_dict(), args.output_file+"/{}.pth".format(model_name))
 
 
     print(f"Finished training. Evaluating using first event of test set.")
-    eval_graph = test_data[0] 
+    eval_graph = test_data[0].to(config["device"]) 
     # inference from a single forward pass
     model.eval()
     torch.inference_mode()
@@ -156,5 +168,5 @@ if __name__=='__main__':
     scatter = ax3.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], s=eval_graph.x[:, -1]*8, c=eval_graph.y, marker='o')
     ax3.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'GT Graph')
     plt.show()
-    fig.savefig(f"plots/results/data_knn_dmon_{config['n_clus']}clus.png", bbox_inches="tight")
+    fig.savefig(f"plots/results/{model_name}_0.png", bbox_inches="tight")
     print()
