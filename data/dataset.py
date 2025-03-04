@@ -11,8 +11,6 @@ import os.path as osp
 
 
 
-
-
 def get_bucket_edges(cells2sig, mask2sig, neighbours_array, src_neighbours_array):
     '''
     Function to calculate edges between nodes in neighbouring buckets of eta,phi.
@@ -65,7 +63,6 @@ class EdgeBuilder(torch.nn.Module):
         self.signif_cut = signif_cut
         self.k = k
         self.rad = rad
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         if self.name=="knn" and self.k is not None:
             self.builder = torch_geometric.nn.knn_graph
@@ -95,21 +92,22 @@ class EdgeBuilder(torch.nn.Module):
         cells2sig = cells[mask_2sigma]
 
         # get cell feature matrix from struct array 
+        # TODO: instead of x,y,z coords give radius (or bucketized radius) instead
         cell_significance = np.expand_dims(abs(cells2sig['cell_E'] / cells2sig['cell_Sigma']),axis=1)
         cell_features = cells2sig[['cell_xCells','cell_yCells','cell_zCells','cell_eta','cell_phi','cell_E','cell_Sigma','cell_pt']]
         feature_matrix = rf.structured_to_unstructured(cell_features,dtype=np.float32)
         feature_matrix = np.hstack((feature_matrix,cell_significance))
-        feature_tensor = torch.tensor(feature_matrix,device=self.device)    
+        feature_tensor = torch.tensor(feature_matrix)    
 
         # get cell IDs,we will also return the cell IDs in the "y" attribute of .Data object
         cell_id_array  = np.expand_dims(cells2sig['cell_IdCells'],axis=1)
-        cell_id_tensor = torch.tensor(cell_id_array.astype(np.int64), device=self.device)
+        cell_id_tensor = torch.tensor(cell_id_array.astype(np.int64))
 
         # make sparse adjacency matrix 
         if self.name == "bucket":
             edge_indices = self.builder(cells2sig, mask_2sigma, **self.args)
         else:
-            edge_indices = self.builder(feature_tensor[:,[0,1,2]],**self.args)
+            edge_indices = self.builder(feature_tensor[:,[0,1,2]], **self.args)
 
         return feature_tensor[:,[0,1,2,3,4,-1]], edge_indices, cell_id_tensor
 
@@ -119,6 +117,8 @@ class EdgeBuilder(torch.nn.Module):
 class CaloDataset(torch_geometric.data.Dataset):
     """The Custom Calorimeter Cells Dataset
     Dataset to cluster point clouds of cells into distinct clusters.
+    Be thread safe wrt CUDA, see:
+    https://discuss.pytorch.org/t/w-cudaipctypes-cpp-22-producer-process-has-been-terminated-before-all-shared-cuda-tensors-released-see-note-sharing-cuda-tensors/124445/14
 
     Args:
         root (str): Root directory where the dataset should be saved.
@@ -132,14 +132,13 @@ class CaloDataset(torch_geometric.data.Dataset):
             (default: :obj:`None`)
     """
 
-    def __init__(self, root, name="knn", k=None, rad=None, out=None, transform=None):
+    def __init__(self, root, name="knn", k=None, rad=None, graph_dir=None, transform=None):
         self.name = name
         self.root = root
         self.k = k
         self.rad = rad
         self.builder = EdgeBuilder(name=self.name,k=self.k,rad=self.rad)
-        self.out = out
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.graph_dir = graph_dir
         print('1.',self.__dict__)
         print('2. root dir',root)
         print('3. raw  dir',self.raw_dir)
@@ -175,7 +174,7 @@ class CaloDataset(torch_geometric.data.Dataset):
     def processed_dir(self):
         '''
         Path to the output folder containing pyg graphs .pt files
-        Later on, we save event graphs to processed_dir + *.pt
+        Later on, we save event graphs to processed_dir + processed_file + *.pt
         Checks made on this dir, if exists and full no processing
         '''
         file_structure = {
@@ -184,8 +183,8 @@ class CaloDataset(torch_geometric.data.Dataset):
             "knn"    :   f"/data/knn/{self.k}/pyg2sig",
             "rad"    :   f"/data/rad/{self.rad}/pyg2sig" 
         }
-        # return osp.join(self.root, 'pyg')
-        return self.out + file_structure[self.name]
+
+        return self.graph_dir + file_structure[self.name]
     
     def len(self):
         n_total_events = 0
@@ -224,13 +223,12 @@ class CaloDataset(torch_geometric.data.Dataset):
             f1.close()
 
     def get(self, idx):
-        data = torch.load(osp.join(self.processed_dir, f'event_graph_{idx}.pt'), weights_only=False,map_location=torch.device(self.device))
+        data = torch.load(osp.join(self.processed_dir, f'event_graph_{idx}.pt'), weights_only=False)
         return data
 
 
 
 if __name__ == "__main__":
-    # intended to be run from /unsup-graph/ upper directory   
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=str, required=True, help='Path to top-level h5 directory',)
@@ -241,7 +239,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # instantiate a dataset, if not already present will be created via process() call
-    mydata = CaloDataset(root=args.root,name=args.name,k=args.k,rad=args.r, out=args.out)
+    mydata = CaloDataset(root=args.root, name=args.name, k=args.k, rad=args.r, graph_dir=args.out)
     print("len",mydata.len(),len(mydata))
     print()
 
