@@ -1,22 +1,28 @@
 import torch
 import torch_geometric
-from torch_geometric.nn import DMoNPooling, GCNConv, norm
+from torch_geometric.nn import DMoNPooling, GCNConv
+from torch_geometric.nn.norm import GraphNorm
 import torch.nn.functional as F
+
+
+
+
 
 # check which version of pytorch geometric - new updates mid-2024
 class Net(torch.nn.Module):
     def __init__(self, in_channels, out_channels, hidden_channels=128):
         super().__init__()
 
-        self.norm = norm.GraphNorm(in_channels)
+        self.norm  = GraphNorm(in_channels)
         self.conv1 = GCNConv(in_channels, hidden_channels)
-        self.relu = torch.nn.ReLU()
+        self.relu  = torch.nn.ReLU()
+        self.selu  = torch.nn.SELU()
         self.pool1 = DMoNPooling(hidden_channels,out_channels)
 
     def forward(self, x, edge_index, batch):
         x = self.norm(x)
         x = self.conv1(x, edge_index)
-        x = self.relu(x)
+        x = self.selu(x)
 
         x, mask = torch_geometric.utils.to_dense_batch(x, batch)
         adj = torch_geometric.utils.to_dense_adj(edge_index, batch)
@@ -27,15 +33,12 @@ class Net(torch.nn.Module):
 
 
 
-
-
-
 if __name__=="__main__":
 
     torch.manual_seed(0)
 
     num_nodes = 1000
-    in_channels = 16  # Input feature dimension
+    in_channels = 4  # Input feature dimension
     out_channels = 10  # Number of clusters
     x = torch.randn(num_nodes, in_channels)
 
