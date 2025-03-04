@@ -3,8 +3,9 @@ data/knn
 data/rad
 data/bucket
 data/custom
-plots/*
+plots/
 saved_models/
+*/__pycache__
 *.html
 *.pth
 .DS_Store
