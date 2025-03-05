@@ -20,14 +20,22 @@ class Net(torch.nn.Module):
         self.pool1 = DMoNPooling(hidden_channels,out_channels)
 
     def forward(self, x, edge_index, batch):
+        # print(f"1. {x.shape}")
+        # print(f"1edge_index {edge_index.shape}")
         x = self.norm(x)
+        # print(f"2. {x.shape}")
         x = self.conv1(x, edge_index)
+        # print(f"3. {x.shape}")
         x = self.selu(x)
+        # print(f"4. {x.shape}")
 
         x, mask = torch_geometric.utils.to_dense_batch(x, batch)
-        adj = torch_geometric.utils.to_dense_adj(edge_index, batch)
+        # print(f"5. {x.shape}")
+        adj = torch_geometric.utils.to_dense_adj(edge_index, batch, max_num_nodes=x.shape[1])
+        # print(f"5adj. {adj.shape}")
 
         s, x, adj, sp1, o1, c1 = self.pool1(x, adj, mask)
+        # print(f"6. {x.shape}")
 
         return F.log_softmax(x, dim=-1), sp1+o1+c1, s
 

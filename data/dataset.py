@@ -138,11 +138,12 @@ class CaloDataset(torch_geometric.data.Dataset):
         self.k = k
         self.rad = rad
         self.builder = EdgeBuilder(name=self.name,k=self.k,rad=self.rad)
+        self.transform = transform if transform!=None else torch_geometric.transforms.RemoveDuplicatedEdges() # https://github.com/pyg-team/pytorch_geometric/discussions/7427
         self.graph_dir = graph_dir
         print('1.',self.__dict__)
         print('2. root dir',root)
         print('3. raw  dir',self.raw_dir)
-        super().__init__(root, transform)
+        super().__init__(self.root, self.transform)
 
 
     @property
@@ -216,6 +217,13 @@ class CaloDataset(torch_geometric.data.Dataset):
 
                 # create pyg Data object for saving
                 event_graph  = torch_geometric.data.Data(x=feature_tensor,edge_index=edge_indices,y=cell_ids) 
+                # print(event_graph)
+                self.transform(event_graph)
+                # print(event_graph)
+                # print(torch_geometric.utils.to_dense_adj(edge_indices).shape)
+                # print(torch_geometric.utils.dense_to_sparse(torch_geometric.utils.to_dense_adj(edge_indices))[0].shape)
+                # print(torch_geometric.utils.dense_to_sparse(torch_geometric.utils.to_dense_adj(edge_indices))[1].shape)
+                # print()
 
                 print("\tEvent graph made, saving... in here:", osp.join(self.processed_dir, f'event_graph_{idx}.pt'))
                 torch.save(event_graph, osp.join(self.processed_dir, f'event_graph_{idx}.pt'))
