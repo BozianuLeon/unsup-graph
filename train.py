@@ -88,21 +88,8 @@ if __name__=='__main__':
     }
     torch.manual_seed(config["seed"])
     torch.multiprocessing.set_start_method('spawn') #https://discuss.pytorch.org/t/runtimeerror-cannot-re-initialize-cuda-in-forked-subprocess-to-use-cuda-with-multiprocessing-you-must-use-the-spawn-start-method/14083/3
-    
-    # generate data and place in geometric dataloaders
-    # n_train = int(config["n_train"])
-    # n_val   = int(config["n_train"]*config["val_frac"])
-    # n_test  = int(config["n_train"]*config["test_frac"])
 
-    # train_data = data.synthetic_cylinder_list(num_graphs=n_train,avg_num_nodes=config["n_nodes"],k=config["k"])
-    # valid_data = data.synthetic_cylinder_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
-    # test_data  = data.synthetic_cylinder_list(num_graphs=n_test,avg_num_nodes=config["n_nodes"],k=config["k"])
-
-    # train_data = data.synthetic_blobs_list(num_graphs=n_train,avg_num_nodes=config["n_nodes"],k=config["k"])
-    # valid_data = data.synthetic_blobs_list(num_graphs=n_val,avg_num_nodes=config["n_nodes"],k=config["k"])
-    # test_data  = data.synthetic_blobs_list(num_graphs=n_test,avg_num_nodes=config["n_nodes"],k=config["k"])
- 
- 
+    # get dataset
     train_data = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
     valid_data = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
     test_data  = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
@@ -126,7 +113,7 @@ if __name__=='__main__':
         val_loss   = test(val_loader, config["device"])
         print(f"Epoch: {epoch:03d}, Train Loss: {train_loss:.3f}, Val Loss: {val_loss:.3f}, Time: {time.perf_counter() - start:.3f}s")
 
-    model_name = "DMoN_calo_{}_{}c_{}e".format(train_data.name,config["n_clus"],config["n_epochs"])
+    model_name = "DMoN_calo_{}_{}c_{}e".format(config["builder"],config["n_clus"],config["n_epochs"])
     print(f'\nSaving model now...\t{model_name}')
     if not os.path.exists(args.output_file): os.makedirs(args.output_file)
     torch.save(model.state_dict(), args.output_file+"/{}.pth".format(model_name))
@@ -137,12 +124,12 @@ if __name__=='__main__':
     # inference from a single forward pass
     model.eval()
     torch.inference_mode()
-    pred,tot_loss,clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
+    pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
 
 
     # force each node to its most likely cluster, no soft assignment
     predicted_classes = clus_ass.squeeze().argmax(dim=1).numpy()
-    unique_values, counts = np.unique(predicted_classes, return_counts=True)
+    unique_values, counts = torch.unique(predicted_classes, return_counts=True)
     for value, count in zip(unique_values, counts):
         print(f"Cluster {value}: {count} occurrences")
 
@@ -168,5 +155,5 @@ if __name__=='__main__':
     scatter = ax3.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], s=eval_graph.x[:, -1]*8, c=eval_graph.y, marker='o')
     ax3.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'GT Graph')
     plt.show()
-    fig.savefig(f"plots/results/{model_name}_0.png", bbox_inches="tight")
+    fig.savefig(f"plots/{model_name}/test_3d_plot.png", bbox_inches="tight")
     print()

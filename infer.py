@@ -19,11 +19,11 @@ parser.add_argument('--root', nargs='?', const='./', default='./', type=str, hel
 parser.add_argument('--name', type=str, required=True, help='Name of edge building scheme (knn, rad, bucket, custom)')
 parser.add_argument('-k', nargs='?', const=None, default=None, type=int, help='K-nearest neighbours value to be used only in knn graph')
 parser.add_argument('-r', nargs='?', const=None, default=None, type=int, help='Radius value to be used only in radial graph')
-parser.add_argument('--graph_dir', nargs='?', const='./', default='./', type=str, help='Path to processed folder containing .pt graphs',)
+parser.add_argument('--graph_dir', nargs='?', const='./data/', default='./data/', type=str, help='Path to processed folder containing .pt graphs',)
 
 
 parser.add_argument('-e','--epochs', type=int, required=True, help='Number of training epochs',)
-parser.add_argument('-bs','--batch_size', nargs='?', const=8, default=8, type=int, help='Batch size to be used')
+parser.add_argument('-bs','--batch_size', nargs='?', const=1, default=1, type=int, help='Batch size to be used')
 parser.add_argument('-nw','--num_workers', nargs='?', const=2, default=2, type=int, help='Number of worker CPUs')
 parser.add_argument('-nc','--num_clusters', nargs='?', const=5, default=5, type=int, help='Number of (max) clusters DMoN can predict')
 parser.add_argument('--model_dir', type=str, required=True, help='Path to saved models directory',)
@@ -111,7 +111,7 @@ if __name__=='__main__':
     model = models.Net(6, config["n_clus"]).to(config["device"])
     total_params = sum(p.numel() for p in model.parameters())
     print(f'DMoN (single conv layer) \t{total_params:,} total parameters.\n')
-    model_name = "DMoN_calo_{}_{}c_{}e".format(train_data.name, config["n_clus"], config["n_epochs"])
+    model_name = "DMoN_calo_{}_{}c_{}e".format(config["builder"], config["n_clus"], config["n_epochs"])
     model_save_path = args.model_dir + f"/{model_name}.pth"
     model.load_state_dict(torch.load(model_save_path, weights_only=True, map_location=torch.device(config["device"])))
 
