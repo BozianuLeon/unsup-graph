@@ -4,7 +4,6 @@ from torch_geometric.loader import DataLoader
 import os
 import time
 import argparse
-import numpy as np
 from matplotlib import pyplot as plt
 
 import models
@@ -89,6 +88,9 @@ if __name__=='__main__':
     torch.manual_seed(config["seed"])
     torch.multiprocessing.set_start_method('spawn') #https://discuss.pytorch.org/t/runtimeerror-cannot-re-initialize-cuda-in-forked-subprocess-to-use-cuda-with-multiprocessing-you-must-use-the-spawn-start-method/14083/3
 
+    # memory management https://pytorch.org/docs/stable/notes/cuda.html#memory-management
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
     # get dataset
     train_data = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
     valid_data = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
@@ -121,15 +123,17 @@ if __name__=='__main__':
 
     print(f"Finished training. Evaluating using first event of test set.")
     eval_graph = test_data[0].to(config["device"]) 
+
     # inference from a single forward pass
     model.eval()
     torch.inference_mode()
     pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
-
+    eval_graph = test_data[0].to("cpu") 
 
     # force each node to its most likely cluster, no soft assignment
-    predicted_classes = clus_ass.squeeze().argmax(dim=1).numpy()
+    predicted_classes = clus_ass.squeeze().argmax(dim=1).cpu()
     unique_values, counts = torch.unique(predicted_classes, return_counts=True)
+    print(f"{len(unique_values)} used out of {config['n_clus']} potential")
     for value, count in zip(unique_values, counts):
         print(f"Cluster {value}: {count} occurrences")
 
