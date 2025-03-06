@@ -57,12 +57,13 @@ def get_bucket_edges(cells2sig, mask2sig, neighbours_array, src_neighbours_array
 
 
 class EdgeBuilder(torch.nn.Module):
-    def __init__(self, name, signif_cut=2, k=None, rad=None):
+    def __init__(self, name, signif_cut=2, k=None, rad=None, graph_dir=None):
         super().__init__()
         self.name = name # knn, rad, bucket, custom
         self.signif_cut = signif_cut
         self.k = k
         self.rad = rad
+        self.graph_dir = graph_dir
 
         if self.name=="knn" and self.k is not None:
             self.builder = torch_geometric.nn.knn_graph
@@ -72,10 +73,10 @@ class EdgeBuilder(torch.nn.Module):
             self.builder = torch_geometric.nn.radius_graph
             self.args = {"r" : self.rad}
 
-        elif self.name=="bucket":
+        elif self.name=="bucket" and self.graph_dir is not None:
             self.builder = get_bucket_edges
-            self.args = {"neighbours_array"     : np.load('./data/pyg/cell_neighbours.npy'),
-                         "src_neighbours_array" : np.load('./data/pyg/src_cell_neighbours.npy')}
+            self.args = {"neighbours_array"     : np.load(self.graph_dir+'/pyg/cell_neighbours.npy'),
+                         "src_neighbours_array" : np.load(self.graph_dir+'/pyg/src_cell_neighbours.npy')}
 
         elif self.name=="custom":
             # to be implemented 
@@ -137,9 +138,9 @@ class CaloDataset(torch_geometric.data.Dataset):
         self.root = root
         self.k = k
         self.rad = rad
-        self.builder = EdgeBuilder(name=self.name,k=self.k,rad=self.rad)
-        self.transform = transform if transform!=None else torch_geometric.transforms.RemoveDuplicatedEdges() # https://github.com/pyg-team/pytorch_geometric/discussions/7427
         self.graph_dir = graph_dir
+        self.builder = EdgeBuilder(name=self.name,k=self.k,rad=self.rad,graph_dir=self.graph_dir)
+        self.transform = transform if transform!=None else torch_geometric.transforms.RemoveDuplicatedEdges() # https://github.com/pyg-team/pytorch_geometric/discussions/7427
         print('1.',self.__dict__)
         print('2. root dir',root)
         print('3. raw  dir',self.raw_dir)
@@ -163,6 +164,13 @@ class CaloDataset(torch_geometric.data.Dataset):
         return osp.join(self.root, 'cells/JZ4/user.lbozianu')
 
     @property
+    def raw_cl_file_names(self):
+        '''
+        List of the CLUSTER h5 files to be opened during processing
+        '''
+        return ["user.lbozianu.42998779._000085.topoClD3PD_mc21_14TeV_JZ4.r14365.h5"]
+
+    @property
     def processed_file_names(self):
         '''
         List of the names of the pytorch geometric Data objects
@@ -179,10 +187,10 @@ class CaloDataset(torch_geometric.data.Dataset):
         Checks made on this dir, if exists and full no processing
         '''
         file_structure = {
-            "custom" :   f"/data/custom/pyg2sig",
-            "bucket" :   f"/data/bucket/pyg2sig",
-            "knn"    :   f"/data/knn/{self.k}/pyg2sig",
-            "rad"    :   f"/data/rad/{self.rad}/pyg2sig" 
+            "custom" :   f"/custom/pyg2sig",
+            "bucket" :   f"/bucket/pyg2sig",
+            "knn"    :   f"/knn/{self.k}/pyg2sig",
+            "rad"    :   f"/rad/{self.rad}/pyg2sig" 
         }
 
         return self.graph_dir + file_structure[self.name]
@@ -217,13 +225,7 @@ class CaloDataset(torch_geometric.data.Dataset):
 
                 # create pyg Data object for saving
                 event_graph  = torch_geometric.data.Data(x=feature_tensor,edge_index=edge_indices,y=cell_ids) 
-                # print(event_graph)
                 self.transform(event_graph)
-                # print(event_graph)
-                # print(torch_geometric.utils.to_dense_adj(edge_indices).shape)
-                # print(torch_geometric.utils.dense_to_sparse(torch_geometric.utils.to_dense_adj(edge_indices))[0].shape)
-                # print(torch_geometric.utils.dense_to_sparse(torch_geometric.utils.to_dense_adj(edge_indices))[1].shape)
-                # print()
 
                 print("\tEvent graph made, saving... in here:", osp.join(self.processed_dir, f'event_graph_{idx}.pt'))
                 torch.save(event_graph, osp.join(self.processed_dir, f'event_graph_{idx}.pt'))
@@ -233,6 +235,42 @@ class CaloDataset(torch_geometric.data.Dataset):
     def get(self, idx):
         data = torch.load(osp.join(self.processed_dir, f'event_graph_{idx}.pt'), weights_only=False)
         return data
+    
+    def get_clusteres(self, idx):
+        # idx tells us which event from all h5 files,
+        # need to find the file first, then get the event no
+
+        for j in range(len(self.raw_paths)):
+            file = self.raw_paths[j]
+            f1 = h5py.File(file,"r")
+            n_events_in_file = len(f1["caloCells"]["2d"])
+            if idx < n_events_in_file:
+                cl_file = osp.join(self.root, 'clusters/JZ4/user.lbozianu', self.raw_cl_file_names[j])
+                f2 = h5py.File(cl_file,"r")
+                cl_data = f2["caloCells"] 
+                event_data   = cl_data["1d"][idx]
+                cluster_data = cl_data["2d"][idx]
+                print(event_data.dtype)
+                print()
+                print(cluster_data.dtype)
+
+                cl_pts = cluster_data['cl_pt'][np.isfinite(cluster_data['cl_pt'])] # [~np.isnan(cl_pts)]
+                cl_E_em  = cluster_data['cl_E_em'][np.isfinite(cluster_data['cl_E_em'])]
+                cl_E_had = cluster_data['cl_E_had'][np.isfinite(cluster_data['cl_E_had'])]
+                cl_cell_n = cluster_data['cl_cell_n'][np.isfinite(cluster_data['cl_cell_n'])]
+                cl_cellmaxfrac = cluster_data['cl_cellmaxfrac'][np.isfinite(cluster_data['cl_cellmaxfrac'])]
+                # cl_etas = cluster_data['cl_eta'][np.isfinite(cluster_data['cl_eta'])] # no eta/phi YET
+                topocluster_dict = {
+                    "cl_pt":          cl_pts,
+                    "cl_E" :          cl_E_em+cl_E_had,
+                    "cl_cell_n":      cl_cell_n,
+                    "cl_cellmaxfrac": cl_cellmaxfrac,
+                    "cl_n":           event_data["cl_n"]
+                }
+                f2.close()
+                return topocluster_dict
+            else:
+                idx = idx - n_events_in_file
 
 
 
@@ -254,6 +292,9 @@ if __name__ == "__main__":
     event_no = 2
     event0 = mydata[event_no]
     print(event0)
+    event0_cl = mydata.get_clusteres(event_no)
+    print(event0_cl.keys())
+    quit()
 
     import matplotlib.pyplot as plt
     fig = plt.figure(figsize=(12, 8))
