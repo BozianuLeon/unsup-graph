@@ -70,13 +70,6 @@ if __name__=="__main__":
     print(f'Model saved here: {model_save_path}')
     model.load_state_dict(torch.load(model_save_path, weights_only=True, map_location=torch.device(config["device"])))
 
-    print(eval_graph.x.shape)
-    print(eval_graph.edge_index.shape)
-    print(len(torch.unique(eval_graph.edge_index)))
-    edge_indices = torch_geometric.nn.radius_graph(eval_graph.x[:,[0,1,2]], r=150)
-    print('repeat dataset ',edge_indices.shape)
-    adj = torch_geometric.utils.to_dense_adj(edge_indices)
-    print('repeat dataset ',adj.shape)
     pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
     # send back to cpu for plotting
     eval_graph = eval_graph.to("cpu")
@@ -85,36 +78,8 @@ if __name__=="__main__":
 
 
     ##########################################################################################################################################################################################
-
-    # make scatter plot of model inference
-
     if not os.path.exists(args.output_dir + model_name): os.makedirs(args.output_dir + model_name)
-    fig_bucket = go.Figure()
-    for idx in range(len(unique_values)):
-        cluster_no = unique_values[idx]
-        cluster_id = predicted_classes==cluster_no
-        gnn_cluster_ids = eval_graph.y[cluster_id]
-        gnn_cell_x = eval_graph.x[cluster_id]
-        fig_bucket.add_trace(go.Scatter3d(x=gnn_cell_x[:, 0],y=gnn_cell_x[:, 2],z=gnn_cell_x[:, 1],mode='markers',marker=dict(size=3.0,opacity=0.6,symbol='circle'),name=f'GNN cluster {idx}'))
 
-    # Update the layout
-    fig_bucket.update_layout(
-        title={'text': 'GNN Output (|s| > 2) BUCKET (eta-phi) Edges','y':0.95,'x':0.5,'xanchor': 'center','yanchor': 'top'},
-        scene=dict(xaxis_title='X',yaxis_title='Y',zaxis_title='Z',aspectmode='data'),
-        width=1400,
-        height=1000,
-        margin=dict(l=100, r=50, b=300, t=0),
-        showlegend=True,
-        legend=dict(yanchor="top",y=0.5,xanchor="right",x=0.99)
-        )
-
-    # html_file_path = '/home/users/b/bozianu/work/calo-cluster/unsup-graph/plots/' + model_name + '/infer_3d_plot.html'
-    html_file_path = args.output_dir + model_name + '/infer_3d_plot.html'
-    config = {'displayModeBar': True,'displaylogo': False}
-    pio.write_html(fig_bucket, file=html_file_path, auto_open=True, include_plotlyjs='cdn', config=config)
-
-
-    ##########################################################################################################################################################################################
 
     # make input graph with edges from sparse adj matrix
 
@@ -135,7 +100,7 @@ if __name__=="__main__":
 
     # Update the layout
     fig.update_layout(
-        title={'text': 'Input (|s| > 2) cell point cloud KNN 3 Edges','y':0.95,'x':0.5,'xanchor': 'center','yanchor': 'top'},
+        title={'text': f'Input (|s| > 2) cell point cloud {args.name} Edges','y':0.95,'x':0.5,'xanchor': 'center','yanchor': 'top'},
         scene=dict(xaxis_title='X',yaxis_title='Y',zaxis_title='Z',aspectmode='data'),
         width=1400,
         height=1000,
@@ -144,10 +109,39 @@ if __name__=="__main__":
         legend=dict(yanchor="top",y=0.5,xanchor="right",x=0.99)
         )
 
-    html_file_path = args.output_dir + model_name + '/input_3d_plot.html'
+    html_file_path = args.output_dir + model_name + '/{}_{}_input_3d_plot.html'.format(args.name,args.num_clusters)
     config = {'displayModeBar': True,'displaylogo': False}
     pio.write_html(fig, file=html_file_path, auto_open=True, include_plotlyjs='cdn', config=config)
 
+
+    ##########################################################################################################################################################################################
+
+    # make scatter plot of model inference
+    print(f"DMoN output: {len(unique_values)}/{args.num_clusters} clusters. Feature matrix size: {eval_graph.x.shape}")
+
+    fig_bucket = go.Figure()
+    for idx in range(len(unique_values)):
+        cluster_no = unique_values[idx]
+        cluster_id = predicted_classes==cluster_no
+        gnn_cluster_ids = eval_graph.y[cluster_id]
+        gnn_cell_x = eval_graph.x[cluster_id]
+        fig_bucket.add_trace(go.Scatter3d(x=gnn_cell_x[:, 0],y=gnn_cell_x[:, 2],z=gnn_cell_x[:, 1],mode='markers',marker=dict(size=3.0,opacity=0.6,symbol='circle'),name=f'GNN cluster {idx}'))
+
+    # Update the layout
+    fig_bucket.update_layout(
+        title={'text': f'GNN Output (|s| > 2) {args.name} Edges, {len(unique_values)}/{args.num_clusters} clusters','y':0.95,'x':0.5,'xanchor': 'center','yanchor': 'top'},
+        scene=dict(xaxis_title='X',yaxis_title='Y',zaxis_title='Z',aspectmode='data'),
+        width=1400,
+        height=1000,
+        margin=dict(l=100, r=50, b=300, t=0),
+        showlegend=True,
+        legend=dict(yanchor="top",y=0.5,xanchor="right",x=0.99)
+        )
+
+    # html_file_path = '/home/users/b/bozianu/work/calo-cluster/unsup-graph/plots/' + model_name + '/infer_3d_plot.html'
+    html_file_path = args.output_dir + model_name + '/{}_{}_infer_3d_plot.html'.format(args.name,args.num_clusters)
+    config = {'displayModeBar': True,'displaylogo': False}
+    pio.write_html(fig_bucket, file=html_file_path, auto_open=True, include_plotlyjs='cdn', config=config)
 
     ##########################################################################################################################################################################################
 
