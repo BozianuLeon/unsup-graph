@@ -5,9 +5,8 @@ import h5py
 import numpy as np
 import numpy.lib.recfunctions as rf
 
+import argparse
 import os.path as osp
-
-
 
 
 
@@ -58,14 +57,14 @@ def get_bucket_edges(cells2sig, mask2sig, neighbours_array, src_neighbours_array
 
 
 class EdgeBuilder(torch.nn.Module):
-    def __init__(self, name, signif_cut=2, feature_columns=[0,1,2,3,4], k=None, rad=None):
+    def __init__(self, name, feat, signif_cut=2, k=None, rad=None, graph_dir=None):
         super().__init__()
         self.name = name # knn, rad, bucket, custom
+        self.feat = feat
         self.signif_cut = signif_cut
-        self.feat_cols = feature_columns
         self.k = k
         self.rad = rad
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.graph_dir = graph_dir
 
         if self.name=="knn" and self.k is not None:
             self.builder = torch_geometric.nn.knn_graph
@@ -75,17 +74,17 @@ class EdgeBuilder(torch.nn.Module):
             self.builder = torch_geometric.nn.radius_graph
             self.args = {"r" : self.rad}
 
-        elif self.name=="bucket":
+        elif self.name=="bucket" and self.graph_dir is not None:
             self.builder = get_bucket_edges
-            self.args = {"neighbours_array"     : np.load('./data/pyg/cell_neighbours.npy'),
-                         "src_neighbours_array" : np.load('./data/pyg/src_cell_neighbours.npy')}
+            self.args = {"neighbours_array"     : np.load(self.graph_dir+'/pyg/cell_neighbours.npy'),
+                         "src_neighbours_array" : np.load(self.graph_dir+'/pyg/src_cell_neighbours.npy')}
 
         elif self.name=="custom":
             # to be implemented 
             self.builder = get_bucket_edges
 
         else:
-            print("Please specify a valid builder with sufficient arguments")
+            print("Please specify a valid builder (knn, rad, bucket) with sufficient arguments")
 
     
     def forward(self, event_no, h5group_cells):
@@ -95,23 +94,31 @@ class EdgeBuilder(torch.nn.Module):
         cells2sig = cells[mask_2sigma]
 
         # get cell feature matrix from struct array 
+        # TODO: instead of x,y,z coords give radius (or bucketized radius) instead
         cell_significance = np.expand_dims(abs(cells2sig['cell_E'] / cells2sig['cell_Sigma']),axis=1)
+        cell_radius = np.sqrt(np.power(cells2sig['cell_xCells'],2) + np.power(cells2sig['cell_yCells'],2) + np.power(cells2sig['cell_zCells'],2))
+        cell_radius = np.expand_dims(cell_radius, axis=1)
         cell_features = cells2sig[['cell_xCells','cell_yCells','cell_zCells','cell_eta','cell_phi','cell_E','cell_Sigma','cell_pt']]
         feature_matrix = rf.structured_to_unstructured(cell_features,dtype=np.float32)
-        feature_matrix = np.hstack((feature_matrix,cell_significance))
-        feature_tensor = torch.tensor(feature_matrix,device=self.device)    
+        feature_matrix = np.hstack((feature_matrix,cell_radius,cell_significance))
+        feature_tensor = torch.tensor(feature_matrix)    
 
         # get cell IDs,we will also return the cell IDs in the "y" attribute of .Data object
         cell_id_array  = np.expand_dims(cells2sig['cell_IdCells'],axis=1)
-        cell_id_tensor = torch.tensor(cell_id_array.astype(np.int64), device=self.device)
+        cell_id_tensor = torch.tensor(cell_id_array.astype(np.int64))
 
         # make sparse adjacency matrix 
         if self.name == "bucket":
             edge_indices = self.builder(cells2sig, mask_2sigma, **self.args)
         else:
-            edge_indices = self.builder(feature_tensor[:,[0,1,2]],**self.args)
+            edge_indices = self.builder(feature_tensor[:,[0,1,2]], **self.args)
+        
+        if self.feat=="XYZ":
+            cols = [0,1,2,7,-1] # x, y, z, pt, significance
+        elif self.feat=="REP":
+            cols = [8,3,4,7,-1]   # r, eta, phi, pt, significance
 
-        return feature_tensor[:,[0,1,2,3,4,-1]], edge_indices, cell_id_tensor
+        return feature_tensor[:,cols], edge_indices, cell_id_tensor
 
 
 
@@ -119,26 +126,35 @@ class EdgeBuilder(torch.nn.Module):
 class CaloDataset(torch_geometric.data.Dataset):
     """The Custom Calorimeter Cells Dataset
     Dataset to cluster point clouds of cells into distinct clusters.
+    Be thread safe wrt CUDA, see:
+    https://discuss.pytorch.org/t/w-cudaipctypes-cpp-22-producer-process-has-been-terminated-before-all-shared-cuda-tensors-released-see-note-sharing-cuda-tensors/124445/14
 
     Args:
         root (str): Root directory where the dataset should be saved.
                     If root is not specified (None), no processing
         k    (int): K-nearest neighbour edhes. Degree of each node
+        rad  (float): Threshold used in radial graph
+        out  (str): Path to output directory, will have /data/.../ appended
         transform (callable, optional): A function/transform that takes in an
             :obj:`torch_geometric.data.Data` object and returns a transformed
             version. The data object will be transformed before every access.
             (default: :obj:`None`)
     """
 
-    def __init__(self, root, name="knn", k=None, rad=None, transform=None):
+    def __init__(self, root, name="knn", feat="XYZ", k=None, rad=None, graph_dir=None, transform=None):
         self.name = name
+        self.feat = feat
+        self.root = root
         self.k = k
         self.rad = rad
-        self.builder = EdgeBuilder(name=self.name,k=self.k,rad=self.rad)
+        self.graph_dir = graph_dir
+        self.builder = EdgeBuilder(name=self.name,feat=self.feat,k=self.k,rad=self.rad,graph_dir=self.graph_dir)
+        self.transform = transform if transform!=None else torch_geometric.transforms.RemoveDuplicatedEdges() # https://github.com/pyg-team/pytorch_geometric/discussions/7427
+        # TODO: Look into  -  torch_geometric.transforms.RemoveIsolatedNodes, 
         print('1.',self.__dict__)
-        print('2. raw  dir',self.raw_dir)
-        print('3. root dir',root)
-        super().__init__(root, transform)
+        print('2. root dir',root)
+        print('3. raw  dir',self.raw_dir)
+        super().__init__(self.root, self.transform)
 
 
     @property
@@ -146,7 +162,8 @@ class CaloDataset(torch_geometric.data.Dataset):
         '''
         List of the h5 files to be opened during processing
         '''
-        return ["user.cantel.34126190._000001.calocellD3PD_mc16_JZ4W.r10788.h5"]
+        # return ['user.lbozianu.42998779._000026.calocellD3PD_mc21_14TeV_JZ4.r14365.h5']
+        return ["user.lbozianu.42998779._000085.calocellD3PD_mc21_14TeV_JZ4.r14365.h5"]
 
     @property
     def raw_dir(self):
@@ -154,8 +171,14 @@ class CaloDataset(torch_geometric.data.Dataset):
         Path to the raw cell data folder containing h5 files
         Later on, raw_paths = raw_dir + / + raw_file_names
         '''
-        # return osp.join(self.root, 'cells')
-        return "../"
+        return osp.join(self.root, 'cells/JZ4/user.lbozianu')
+
+    @property
+    def raw_cl_file_names(self):
+        '''
+        List of the CLUSTER h5 files to be opened during processing
+        '''
+        return ["user.lbozianu.42998779._000085.topoClD3PD_mc21_14TeV_JZ4.r14365.h5"]
 
     @property
     def processed_file_names(self):
@@ -170,17 +193,17 @@ class CaloDataset(torch_geometric.data.Dataset):
     def processed_dir(self):
         '''
         Path to the output folder containing pyg graphs .pt files
-        Later on, we save event graphs to processed_dir + *.pt
+        Later on, we save event graphs to processed_dir + processed_file + *.pt
         Checks made on this dir, if exists and full no processing
         '''
         file_structure = {
-            "custom" :   f"./data/custom/pyg2sig",
-            "bucket" :   f"./data/bucket/pyg2sig",
-            "knn"    :   f"./data/knn/{self.k}/pyg2sig",
-            "rad"    :   f"./data/rad/{self.rad}/pyg2sig" 
+            "custom" :   f"/custom/pyg2sig{self.feat}",
+            "bucket" :   f"/bucket/pyg2sig{self.feat}",
+            "knn"    :   f"/knn/{self.k}/pyg2sig{self.feat}",
+            "rad"    :   f"/rad/{self.rad}/pyg2sig{self.feat}" 
         }
-        # return osp.join(self.root, 'pyg')
-        return file_structure[self.name]
+
+        return self.graph_dir + file_structure[self.name]
     
     def len(self):
         n_total_events = 0
@@ -212,6 +235,7 @@ class CaloDataset(torch_geometric.data.Dataset):
 
                 # create pyg Data object for saving
                 event_graph  = torch_geometric.data.Data(x=feature_tensor,edge_index=edge_indices,y=cell_ids) 
+                self.transform(event_graph)
 
                 print("\tEvent graph made, saving... in here:", osp.join(self.processed_dir, f'event_graph_{idx}.pt'))
                 torch.save(event_graph, osp.join(self.processed_dir, f'event_graph_{idx}.pt'))
@@ -221,26 +245,71 @@ class CaloDataset(torch_geometric.data.Dataset):
     def get(self, idx):
         data = torch.load(osp.join(self.processed_dir, f'event_graph_{idx}.pt'), weights_only=False)
         return data
+    
+    def get_clusteres(self, idx):
+        # idx tells us which event from all h5 files,
+        # need to find the file first, then get the event no
+
+        for j in range(len(self.raw_paths)):
+            file = self.raw_paths[j]
+            f1 = h5py.File(file,"r")
+            n_events_in_file = len(f1["caloCells"]["2d"])
+            if idx < n_events_in_file:
+                cl_file = osp.join(self.root, 'clusters/JZ4/user.lbozianu', self.raw_cl_file_names[j])
+                f2 = h5py.File(cl_file,"r")
+                cl_data = f2["caloCells"] 
+                event_data   = cl_data["1d"][idx]
+                cluster_data = cl_data["2d"][idx]
+                print(event_data.dtype)
+                print()
+                print(cluster_data.dtype)
+
+                cl_pts = cluster_data['cl_pt'][np.isfinite(cluster_data['cl_pt'])] # [~np.isnan(cl_pts)]
+                cl_E_em  = cluster_data['cl_E_em'][np.isfinite(cluster_data['cl_E_em'])]
+                cl_E_had = cluster_data['cl_E_had'][np.isfinite(cluster_data['cl_E_had'])]
+                cl_cell_n = cluster_data['cl_cell_n'][np.isfinite(cluster_data['cl_cell_n'])]
+                cl_cellmaxfrac = cluster_data['cl_cellmaxfrac'][np.isfinite(cluster_data['cl_cellmaxfrac'])]
+                # cl_etas = cluster_data['cl_eta'][np.isfinite(cluster_data['cl_eta'])] # no eta/phi YET
+                topocluster_dict = {
+                    "cl_pt":          cl_pts,
+                    "cl_E" :          cl_E_em+cl_E_had,
+                    "cl_cell_n":      cl_cell_n,
+                    "cl_cellmaxfrac": cl_cellmaxfrac,
+                    "cl_n":           event_data["cl_n"],
+                }
+                f2.close()
+                return topocluster_dict
+            else:
+                idx = idx - n_events_in_file
 
 
 
 if __name__ == "__main__":
-    # intended to be run from /unsup-graph/ upper directory
 
-    # mydata = MyOwnDataset("root_dir",name="knn",k=5) # unhash to recreate dataset
-    # mydata = MyOwnDataset("root_dir",name="rad",rad=200) # unhash to recreate dataset
-    mydata = MyOwnDataset("root_dir",name="bucket") # unhash to recreate dataset
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--root', type=str, required=True, help='Path to top-level h5 directory',)
+    parser.add_argument('--name', type=str, required=True, help='Name of edge building scheme (knn, rad, bucket, custom)')
+    parser.add_argument('--feat', type=str, nargs='?', const="XYZ", default="XYZ", help='Which geometrical columns are in the feature matrix (XYZ or REP)')
+    parser.add_argument('-k', nargs='?', const=None, default=None, type=int, help='K-nearest neighbours value to be used only in knn graph')
+    parser.add_argument('-r', nargs='?', const=None, default=None, type=int, help='Radius value to be used only in radial graph')
+    parser.add_argument('-o','--out',nargs='?', const='./cache/', default='./cache/', type=str, help='Path to processed folder containing .pt graphs',)
+    args = parser.parse_args()
+
+    # instantiate a dataset, if not already present will be created via process() call
+    mydata = CaloDataset(root=args.root, name=args.name, feat=args.feat, k=args.k, rad=args.r, graph_dir=args.out)
     print("len",mydata.len(),len(mydata))
     print()
 
     event_no = 2
     event0 = mydata[event_no]
     print(event0)
+    event0_cl = mydata.get_clusteres(event_no)
+    print(event0_cl.keys())
+    quit()
 
     import matplotlib.pyplot as plt
     fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(111, projection='3d')
-    # remember that XZY makes the calorimeter appear the "correct" way up
     ax.scatter(event0.x[:, 0], event0.x[:, 2], event0.x[:, 1], s=event0.x[:, -1], c='b', marker='o')
     for src, dst in event0.edge_index.t().tolist():
         x_src, y_src, z_src, *feat = event0.x[src]
