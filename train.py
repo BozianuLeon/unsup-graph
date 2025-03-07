@@ -14,6 +14,7 @@ import data
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', nargs='?', const='./', default='./', type=str, help='Path to top-level h5 directory',)
 parser.add_argument('--name', type=str, required=True, help='Name of edge building scheme (knn, rad, bucket, custom)')
+parser.add_argument('--feat', type=str, nargs='?', const="XYZ", default="XYZ", help='Which geometrical columns are in the feature matrix (XYZ or REP)')
 parser.add_argument('-k', nargs='?', const=None, default=None, type=int, help='K-nearest neighbours value to be used only in knn graph')
 parser.add_argument('-r', nargs='?', const=None, default=None, type=int, help='Radius value to be used only in radial graph')
 parser.add_argument('--graph_dir', nargs='?', const='./', default='./', type=str, help='Path to processed folder containing .pt graphs',)
@@ -75,6 +76,7 @@ if __name__=='__main__':
         "test_frac"  : 0.15,
         "n_nodes"    : 1000,
         "builder"    : args.name,
+        "features"   : args.feat,
         "graph_dir"  : args.graph_dir,
         "k"          : args.k,
         "r"          : args.r,
@@ -92,9 +94,9 @@ if __name__=='__main__':
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
     # get dataset
-    train_data = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
-    valid_data = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
-    test_data  = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
+    train_data = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
+    valid_data = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
+    test_data  = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
     print('\ttrain / val / test size : ',len(train_data),'/',len(valid_data),'/',len(test_data),'\n')
 
     train_loader = DataLoader(train_data, batch_size=config["BS"], num_workers=config["NW"],shuffle=True)
@@ -115,7 +117,7 @@ if __name__=='__main__':
         val_loss   = test(val_loader, config["device"])
         print(f"Epoch: {epoch:03d}, Train Loss: {train_loss:.3f}, Val Loss: {val_loss:.3f}, Time: {time.perf_counter() - start:.3f}s")
 
-    model_name = "DMoN_calo_{}_{}c_{}e".format(config["builder"],config["n_clus"],config["n_epochs"])
+    model_name = "DMoN_calo{}_{}_{}c_{}e".format(config["features"],config["builder"],config["n_clus"],config["n_epochs"])
     print(f'\nSaving model now...\t{model_name}')
     if not os.path.exists(args.output_file): os.makedirs(args.output_file)
     torch.save(model.state_dict(), args.output_file+"/{}.pth".format(model_name))

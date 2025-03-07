@@ -57,9 +57,10 @@ def get_bucket_edges(cells2sig, mask2sig, neighbours_array, src_neighbours_array
 
 
 class EdgeBuilder(torch.nn.Module):
-    def __init__(self, name, signif_cut=2, k=None, rad=None, graph_dir=None):
+    def __init__(self, name, feat, signif_cut=2, k=None, rad=None, graph_dir=None):
         super().__init__()
         self.name = name # knn, rad, bucket, custom
+        self.feat = feat
         self.signif_cut = signif_cut
         self.k = k
         self.rad = rad
@@ -83,7 +84,7 @@ class EdgeBuilder(torch.nn.Module):
             self.builder = get_bucket_edges
 
         else:
-            print("Please specify a valid builder with sufficient arguments")
+            print("Please specify a valid builder (knn, rad, bucket) with sufficient arguments")
 
     
     def forward(self, event_no, h5group_cells):
@@ -95,9 +96,11 @@ class EdgeBuilder(torch.nn.Module):
         # get cell feature matrix from struct array 
         # TODO: instead of x,y,z coords give radius (or bucketized radius) instead
         cell_significance = np.expand_dims(abs(cells2sig['cell_E'] / cells2sig['cell_Sigma']),axis=1)
+        cell_radius = np.sqrt(np.power(cells2sig['cell_xCells'],2) + np.power(cells2sig['cell_yCells'],2) + np.power(cells2sig['cell_zCells'],2))
+        cell_radius = np.expand_dims(cell_radius, axis=1)
         cell_features = cells2sig[['cell_xCells','cell_yCells','cell_zCells','cell_eta','cell_phi','cell_E','cell_Sigma','cell_pt']]
         feature_matrix = rf.structured_to_unstructured(cell_features,dtype=np.float32)
-        feature_matrix = np.hstack((feature_matrix,cell_significance))
+        feature_matrix = np.hstack((feature_matrix,cell_radius,cell_significance))
         feature_tensor = torch.tensor(feature_matrix)    
 
         # get cell IDs,we will also return the cell IDs in the "y" attribute of .Data object
@@ -109,8 +112,13 @@ class EdgeBuilder(torch.nn.Module):
             edge_indices = self.builder(cells2sig, mask_2sigma, **self.args)
         else:
             edge_indices = self.builder(feature_tensor[:,[0,1,2]], **self.args)
+        
+        if self.feat=="XYZ":
+            cols = [0,1,2,7,-1] # x, y, z, pt, significance
+        elif self.feat=="REP":
+            cols = [8,3,4,7,-1]   # r, eta, phi, pt, significance
 
-        return feature_tensor[:,[0,1,2,3,4,-1]], edge_indices, cell_id_tensor
+        return feature_tensor[:,cols], edge_indices, cell_id_tensor
 
 
 
@@ -133,14 +141,16 @@ class CaloDataset(torch_geometric.data.Dataset):
             (default: :obj:`None`)
     """
 
-    def __init__(self, root, name="knn", k=None, rad=None, graph_dir=None, transform=None):
+    def __init__(self, root, name="knn", feat="XYZ", k=None, rad=None, graph_dir=None, transform=None):
         self.name = name
+        self.feat = feat
         self.root = root
         self.k = k
         self.rad = rad
         self.graph_dir = graph_dir
-        self.builder = EdgeBuilder(name=self.name,k=self.k,rad=self.rad,graph_dir=self.graph_dir)
+        self.builder = EdgeBuilder(name=self.name,feat=self.feat,k=self.k,rad=self.rad,graph_dir=self.graph_dir)
         self.transform = transform if transform!=None else torch_geometric.transforms.RemoveDuplicatedEdges() # https://github.com/pyg-team/pytorch_geometric/discussions/7427
+        # TODO: Look into  -  torch_geometric.transforms.RemoveIsolatedNodes, 
         print('1.',self.__dict__)
         print('2. root dir',root)
         print('3. raw  dir',self.raw_dir)
@@ -187,10 +197,10 @@ class CaloDataset(torch_geometric.data.Dataset):
         Checks made on this dir, if exists and full no processing
         '''
         file_structure = {
-            "custom" :   f"/custom/pyg2sig",
-            "bucket" :   f"/bucket/pyg2sig",
-            "knn"    :   f"/knn/{self.k}/pyg2sig",
-            "rad"    :   f"/rad/{self.rad}/pyg2sig" 
+            "custom" :   f"/custom/pyg2sig{self.feat}",
+            "bucket" :   f"/bucket/pyg2sig{self.feat}",
+            "knn"    :   f"/knn/{self.k}/pyg2sig{self.feat}",
+            "rad"    :   f"/rad/{self.rad}/pyg2sig{self.feat}" 
         }
 
         return self.graph_dir + file_structure[self.name]
@@ -265,7 +275,7 @@ class CaloDataset(torch_geometric.data.Dataset):
                     "cl_E" :          cl_E_em+cl_E_had,
                     "cl_cell_n":      cl_cell_n,
                     "cl_cellmaxfrac": cl_cellmaxfrac,
-                    "cl_n":           event_data["cl_n"]
+                    "cl_n":           event_data["cl_n"],
                 }
                 f2.close()
                 return topocluster_dict
@@ -279,13 +289,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=str, required=True, help='Path to top-level h5 directory',)
     parser.add_argument('--name', type=str, required=True, help='Name of edge building scheme (knn, rad, bucket, custom)')
+    parser.add_argument('--feat', type=str, nargs='?', const="XYZ", default="XYZ", help='Which geometrical columns are in the feature matrix (XYZ or REP)')
     parser.add_argument('-k', nargs='?', const=None, default=None, type=int, help='K-nearest neighbours value to be used only in knn graph')
     parser.add_argument('-r', nargs='?', const=None, default=None, type=int, help='Radius value to be used only in radial graph')
     parser.add_argument('-o','--out',nargs='?', const='./cache/', default='./cache/', type=str, help='Path to processed folder containing .pt graphs',)
     args = parser.parse_args()
 
     # instantiate a dataset, if not already present will be created via process() call
-    mydata = CaloDataset(root=args.root, name=args.name, k=args.k, rad=args.r, graph_dir=args.out)
+    mydata = CaloDataset(root=args.root, name=args.name, feat=args.feat, k=args.k, rad=args.r, graph_dir=args.out)
     print("len",mydata.len(),len(mydata))
     print()
 
