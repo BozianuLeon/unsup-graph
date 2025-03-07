@@ -10,6 +10,18 @@ import torch.nn.functional as F
 
 # check which version of pytorch geometric - new updates mid-2024
 class Net(torch.nn.Module):
+    '''
+    Spectral modularity pooling operator from https://arxiv.org/abs/2006.16904
+    Pooling operator based on learned cluster assignment soft scores. Returns the 
+    learned cluster assignment matrix, the pooled node feature matrix, the coarse
+    symmetric normalised adjacency matrix and the three(?) loss functions:
+    spectral loss, orthogonality loss and cluster loss
+    
+    Returns:
+        log softmax (x), output tensor of pooled node features
+        sp1+o1+cl1, loss 
+        s, learned cluster assignment
+    '''
     def __init__(self, in_channels, out_channels, hidden_channels=128):
         super().__init__()
 
