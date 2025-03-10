@@ -4,6 +4,8 @@ import torch_geometric
 import h5py
 import numpy as np
 import numpy.lib.recfunctions as rf
+import scipy
+import os
 import matplotlib.pyplot as plt
 import matplotlib
 import plotly.graph_objects as go
@@ -66,11 +68,11 @@ if __name__=="__main__":
 
 
     # first we make the input graph
-    path_to_h5_file = "/srv/beegfs/scratch/shares/atlas_caloM/mu_200_truthjets/cells/JZ4/user.lbozianu/user.lbozianu.42998779._000015.calocellD3PD_mc21_14TeV_JZ4.r14365.h5"
+    path_to_h5_file = "/srv/beegfs/scratch/shares/atlas_caloM/mu_200_truthjets/cells/JZ4/user.lbozianu/user.lbozianu.43589851._000117.calocellD3PD_mc21_14TeV_JZ4.r14365.h5"
     print("\t",path_to_h5_file)
     f1 = h5py.File(path_to_h5_file,"r")
 
-    kk = 1 # event numb
+    kk = 3 # event numb
     cells = f1["caloCells"]["2d"][kk] # event 0 cells
     mask_2sigma = abs(cells['cell_E'] / cells['cell_Sigma']) >= 2
     mask_4sigma = abs(cells['cell_E'] / cells['cell_Sigma']) >= 4
@@ -133,7 +135,8 @@ if __name__=="__main__":
     unique_values, counts = np.unique(predicted_classes, return_counts=True)
 
 
-    save_loc = "/home/users/b/bozianu/work/calo-cluster/unsup-graph/plots/"
+    save_loc = f"/home/users/b/bozianu/work/calo-cluster/unsup-graph/plots/{model_name}/{kk}/"
+    if not os.path.exists(save_loc): os.makedirs(save_loc)
 
     # make input graph with edges from sparse adj matrix
 
@@ -163,7 +166,7 @@ if __name__=="__main__":
         legend=dict(yanchor="top",y=0.5,xanchor="right",x=0.99)
         )
 
-    html_file_path = save_loc + model_name + '/bucket_150_input_3d_plot.html'
+    html_file_path = save_loc + '/bucket_150_input_3d_plot.html'
     config = {'displayModeBar': True,'displaylogo': False}
     pio.write_html(fig, file=html_file_path, auto_open=True, include_plotlyjs='cdn', config=config)
 
@@ -190,25 +193,50 @@ if __name__=="__main__":
         legend=dict(yanchor="top",y=0.5,xanchor="right",x=0.99)
         )
 
-    html_file_path = save_loc + model_name + '/bucket_150_inference_3d_plot.html'
+    html_file_path = save_loc + '/bucket_150_inference_3d_plot.html'
     config = {'displayModeBar': True,'displaylogo': False}
     pio.write_html(fig_bucket, file=html_file_path, auto_open=True, include_plotlyjs='cdn', config=config)
 
 
+    #######################################
+
+    cell_etas = cell_features['cell_eta']
+    cell_phis = cell_features['cell_phi']
+    cell_pt = cell_features['cell_pt']/1000
+    #np.linspace(start, stop, int((stop - start) / step + 1))
+    bins_x = np.linspace(min(cell_etas), max(cell_etas), int((max(cell_etas) - min(cell_etas)) / 0.1 + 1))
+    bins_y = np.linspace(min(cell_phis), max(cell_phis), int((max(cell_phis) - min(cell_phis)) / ((2*np.pi)/64) + 1))
+    H_sum_pt, xedges, yedges, binnumber = scipy.stats.binned_statistic_2d(cell_etas, cell_phis,values=cell_pt,bins=(bins_x,bins_y),statistic='sum')
+    H_sum_pt = H_sum_pt.T
+    # Padding
+    repeat_frac = 0.5
+    repeat_rows = int(H_sum_pt.shape[0]*repeat_frac)
+    one_box_height = (yedges[-1]-yedges[0])/H_sum_pt.shape[0]
+    H_sum_pt = np.pad(H_sum_pt, ((repeat_rows,repeat_rows),(0,0)),'wrap')
+    H_sum_pt[np.isnan(H_sum_pt)] = 0
+    extent = (xedges[0],xedges[-1],yedges[0]-(repeat_rows*one_box_height),yedges[-1]+(repeat_rows*one_box_height)) 
+
+    f,ax = plt.subplots(figsize=(10,12))
+    ii = ax.imshow(H_sum_pt,cmap='YlOrRd',extent=extent,origin='lower')
+    cbar = f.colorbar(ii,ax=ax)
+    cbar.ax.get_yaxis().labelpad = 10
+    cbar.set_label(f'cell pt', rotation=90)
+    ax.set(xlabel='eta',ylabel='phi')
+    f.savefig(f"{save_loc}/data_{kk}_examine_img_2d.png")
 
 
     #######################################
     f,a = plt.subplots(1,1,figsize=(10,12))   
     a.scatter(feature_tensor[:, 3], feature_tensor[:, 4], s=10, c=predicted_classes, cmap='tab20b')
     a.set(xlabel='eta',ylabel='phi',title=f'DMoN Output Clustered Cells')
-    f.savefig(f"{save_loc}/{model_name}/data_{kk}_cells_2d.png")
+    f.savefig(f"{save_loc}/data_{kk}_cells_2d.png")
     plt.close()
 
     #######################################
     fi,ax = plt.subplots(1,1,figsize=(10,12)) 
     ax.set_prop_cycle(color=plt.cm.tab20b(np.linspace(0, 1, 20)))
     for cl_idx in range(len(unique_values)):
-        cluster_i_mask = predicted_classes == cl_idx
+        cluster_i_mask = predicted_classes == unique_values[cl_idx]
         cl_cell_i = feature_tensor[cluster_i_mask, :].numpy()
         cl_eta, cl_phi = weighted_mean(cl_cell_i[:,3], cl_cell_i[:,5]), weighted_circular_mean(cl_cell_i[:,4], cl_cell_i[:,5])
         cl_e = np.sum(cl_cell_i[:,5]) if len(cl_cell_i) else np.nan
@@ -216,32 +244,37 @@ if __name__=="__main__":
         cl_theta = 2*np.arctan(np.exp(-cl_eta))
         cl_et = np.sin(cl_theta)*cl_e
         ax.plot(cl_eta, cl_phi, ms=(cl_et/1000)/5, marker='^',alpha=.6)
-        if cl_et > 15000:
+        if cl_et > 5000:
             ax.text(cl_eta+0.1,cl_phi+0.1, f"{cl_et/1000:.1f}",color='red',fontsize=8)
     ax.set(xlabel='eta',ylabel='phi',title=f'DMoN Output Clusters')
-    fi.savefig(f"{save_loc}/{model_name}/data_{kk}_DMoNcl_2d.png")
+    fi.savefig(f"{save_loc}/data_{kk}_DMoNcl_2d.png")
     plt.close()
 
+    for value, count in zip(unique_values, counts):
+        print(f"\tCluster {value}: {count} occurrences")
+    
     #######################################
     # let's make jets out of our clusters
     jetdef = fastjet.JetDefinition(fastjet.antikt_algorithm, 0.4)
     m = 0 # clusters are considered massless
     gnn_jet_constituents = []
     for cl_idx in range(len(unique_values)):
-        cluster_i_mask = predicted_classes == cl_idx
+        cluster_i_mask = predicted_classes == unique_values[cl_idx]
         cl_cell_i = feature_tensor[cluster_i_mask, :].numpy()
         cl_eta, cl_phi = weighted_mean(cl_cell_i[:,3], cl_cell_i[:,5]), weighted_circular_mean(cl_cell_i[:,4], cl_cell_i[:,5])
         cl_theta = 2*np.arctan(np.exp(-cl_eta))
         cl_e = np.sum(cl_cell_i[:,5]) if len(cl_cell_i) else np.nan
-        cl_phi = clip_phi(cl_phi)
+        # cl_phi = clip_phi(cl_phi)
         cl_et = np.sin(cl_theta)*cl_e
-        print(f"There are {len(cl_cell_i)} cells in this cluster. Eta: {cl_eta:.3f}, Phi: {cl_phi:.3f}, E: {cl_e/1000:.3f} GeV, ET {cl_et/1000:.3f} GeV")
-        # if cl_e > 2000:
+        cl_pt = np.sum(cl_cell_i[:,-2])
         if np.isfinite(cl_e):
+            print(f"There are {len(cl_cell_i)} cells in this cluster ({cl_idx},{unique_values[cl_idx]}). Eta: {cl_eta:.3f}, Phi: {cl_phi:.3f}, E: {cl_e/1000:.3f} GeV, ET {cl_et/1000:.3f} GeV, (PT {cl_pt/1000:.3f})")
             gnn_jet_constituents.append(fastjet.PseudoJet(cl_e * np.sin(cl_theta)*np.cos(cl_phi),
                                                         cl_e * np.sin(cl_theta)*np.sin(cl_phi),
                                                         cl_e * np.cos(cl_theta),
                                                         m))
+        else:
+            print(f"!There are {len(cl_cell_i)} cells in this cluster. Eta: {cl_eta:.3f}, Phi: {cl_phi:.3f}, E: {cl_e/1000:.3f} GeV, ET {cl_et/1000:.3f} GeV, (PT {cl_pt/1000:.3f})")
     gnn_pred_jets = fastjet.ClusterSequence(gnn_jet_constituents,jetdef)
     gnn_pred_jets_inc = gnn_pred_jets.inclusive_jets()
 
@@ -250,8 +283,8 @@ if __name__=="__main__":
         gnn_jet_i = gnn_pred_jets_inc[jet_idx]
         ax.plot(gnn_jet_i.eta(), clip_phi(gnn_jet_i.phi()), ms=(gnn_jet_i.pt()/1000)/10, marker='o',alpha=.6)
         ax.text(gnn_jet_i.eta()+0.1,clip_phi(gnn_jet_i.phi())+0.1, f"{gnn_jet_i.pt()/1000:.1f}",color='red',fontsize=8)
-    ax.set(xlabel='eta',ylabel='phi',xlim=(-4,4),ylim=(-3.2,3.2),title=f'DMoN Output Clusters -> Jets')
-    fi.savefig(f"{save_loc}/{model_name}/data_{kk}_DMoNjets_2d.png")
+    ax.set(xlabel='eta',ylabel='phi',xlim=(-4.9,4.9),ylim=(-3.2,3.2),title=f'DMoN Output Clusters => Jets')
+    fi.savefig(f"{save_loc}/data_{kk}_DMoNjets_2d.png")
     plt.close()
 
     fi,ax = plt.subplots(1,1,figsize=(10,12)) 
@@ -261,9 +294,10 @@ if __name__=="__main__":
         if gnn_jet_i.pt() > 25000:
             ax.plot(gnn_jet_i.eta(), clip_phi(gnn_jet_i.phi()), ms=(gnn_jet_i.pt()/1000)/10, marker='o',alpha=.6)
             ax.text(gnn_jet_i.eta()+0.1,clip_phi(gnn_jet_i.phi())+0.1, f"{gnn_jet_i.pt()/1000:.1f}",color='red',fontsize=8)
-    ax.set(xlabel='eta',ylabel='phi',xlim=(-4,4),ylim=(-3.2,3.2),title=f'DMoN Output Clusters -> Jets')
-    fi.savefig(f"{save_loc}/{model_name}/data_{kk}_DMoNjets_20GeV_2d.png")
+    ax.set(xlabel='eta',ylabel='phi',xlim=(-4.9,4.9),ylim=(-3.2,3.2),title=f'DMoN Output Jets')
+    fi.savefig(f"{save_loc}/data_{kk}_DMoNjets_20GeV_2d.png")
     plt.close()
+
 
     ##########################################################################################################################################################################################
 
@@ -272,45 +306,96 @@ if __name__=="__main__":
         # find the indices where there are not nan values
         good_indices = np.where(array==array) 
         return array[good_indices]
-    # WRONG EVENT
-    # path_to_cl_h5_file = "/home/users/b/bozianu/work/calo-cluster/user.lbozianu.43573701._000015.topoClD3PD_mc21_14TeV_JZ4.r14365.h5"
-    # with h5py.File(path_to_cl_h5_file,"r") as f:
-    #     c_data = f["caloCells"]
-    #     cl_data = c_data["2d"][kk]
-    #     cl_data = remove_nan(cl_data)
 
-    # fi,ax = plt.subplots(1,1,figsize=(10,12)) 
-    # for jet_idx in range(len(cl_data)):
-    #     topocl_i = cl_data[jet_idx]
-    #     # ax.plot(topocl_i['cl_eta'], topocl_i['cl_phi'], ms=(topocl_i['cl_pt']/1000)/2, marker='1',alpha=.6)
-    #     ax.plot(topocl_i['cl_eta'], topocl_i['cl_phi'], ms=((topocl_i['cl_E_em'] + topocl_i['cl_E_had'])/1000)/5, marker='s',alpha=.6)
-    #     # if topocl_i['cl_pt'] > 5000:
-    #     if (topocl_i['cl_E_em'] + topocl_i['cl_E_had']) > 5000:
-    #         ax.text(topocl_i['cl_eta']+0.1,topocl_i['cl_phi']+0.1, f"{(topocl_i['cl_E_em'] + topocl_i['cl_E_had'])/1000:.1f}",color='red',fontsize=8)
-    # ax.set(xlabel='eta',ylabel='phi',xlim=(-4,4),ylim=(-3.2,3.2),title=f'Topoclusters')
-    # fi.savefig(f"{save_loc}/{model_name}/data_{kk}_topocl_2d.png")
-    # plt.close()
+
+
+    path_to_cl_h5_file = "/srv/beegfs/scratch/shares/atlas_caloM/mu_200_truthjets/clusters/JZ4/user.lbozianu/user.lbozianu.43589851._000117.topoClD3PD_mc21_14TeV_JZ4.r14365.h5"
+    with h5py.File(path_to_cl_h5_file,"r") as f:
+        c_data = f["caloCells"]
+        cl_data = c_data["2d"][kk]
+        cl_data = remove_nan(cl_data)
+
+
+    fi,ax = plt.subplots(1,1,figsize=(10,12)) 
+    for cl_idx in range(len(cl_data)):
+        topocl_i = cl_data[cl_idx]
+        ax.plot(topocl_i['cl_eta'], topocl_i['cl_phi'], ms=(topocl_i['cl_pt']/1000)/5, marker='H',alpha=.6,color='darkslategrey')
+        # ax.plot(topocl_i['cl_eta'], topocl_i['cl_phi'], ms=((topocl_i['cl_E_em'] + topocl_i['cl_E_had'])/1000)/5, marker='s',alpha=.6)
+        if topocl_i['cl_pt'] > 5000:
+        # if (topocl_i['cl_E_em'] + topocl_i['cl_E_had']) > 5000:
+            # ax.text(topocl_i['cl_eta']+0.1,topocl_i['cl_phi']+0.1, f"{(topocl_i['cl_E_em'] + topocl_i['cl_E_had'])/1000:.1f}",color='red',fontsize=8)
+            ax.text(topocl_i['cl_eta']+0.1,topocl_i['cl_phi']+0.1, f"{(topocl_i['cl_pt'])/1000:.1f}",color='red',fontsize=8)
+    ax.set(xlabel='eta',ylabel='phi',xlim=(-4.9,4.9),ylim=(-3.2,3.2),title=f'Topoclusters')
+    fi.savefig(f"{save_loc}/data_{kk}_topocl_2d.png")
+    plt.close()
     print()
 
 
+    #######################################
+    # let's make jets out of TOPOCLUSTERS
+    jetdef = fastjet.JetDefinition(fastjet.antikt_algorithm, 0.4)
+    tc_jet_constituents = []
+    for cl_idx in range(len(cl_data)):
+        topocl_i = cl_data[cl_idx]
+        cl_eta,cl_phi = topocl_i['cl_eta'], topocl_i['cl_phi']
+        cl_theta = 2*np.arctan(np.exp(-cl_eta))
+        cl_e = topocl_i['cl_E_em'] + topocl_i['cl_E_had']
+        cl_phi = clip_phi(cl_phi)
+        cl_et = np.sin(cl_theta)*cl_e
+        cl_pt = topocl_i['cl_pt']
+        # print(f"There are {len(cl_cell_i)} cells in this cluster. Eta: {cl_eta:.3f}, Phi: {cl_phi:.3f}, E: {cl_e/1000:.3f} GeV, ET {cl_et/1000:.3f} GeV, (PT {cl_pt/1000:.3f})")
+        tc_jet_constituents.append(fastjet.PseudoJet(cl_e * np.sin(cl_theta)*np.cos(cl_phi),
+                                                     cl_e * np.sin(cl_theta)*np.sin(cl_phi),
+                                                     cl_e * np.cos(cl_theta),
+                                                     m))
+    tc_jets = fastjet.ClusterSequence(tc_jet_constituents,jetdef)
+    tc_jets_inc = tc_jets.inclusive_jets()
+    
+    fi,ax = plt.subplots(1,1,figsize=(10,12)) 
+    for jet_idx in range(len(tc_jets_inc)):
+        topocl_jet_i = tc_jets_inc[jet_idx]
+        print(f"This TC fastjet jet has Eta: {topocl_jet_i.eta():.3f}, Phi: {clip_phi(topocl_jet_i.phi()):.3f}, E: {topocl_jet_i.E()/1000:.3f} GeV, pT {topocl_jet_i.pt()/1000:.3f} GeV")
+        if topocl_jet_i.pt() > 25000:
+            ax.plot(topocl_jet_i.eta(), clip_phi(topocl_jet_i.phi()), ms=(topocl_jet_i.pt()/1000)/10, marker='o',alpha=.6,color='darkslategrey')
+            ax.text(topocl_jet_i.eta()+0.1,clip_phi(topocl_jet_i.phi())+0.1, f"{topocl_jet_i.pt()/1000:.1f}",color='red',fontsize=8)
+    ax.set(xlabel='eta',ylabel='phi',xlim=(-4.9,4.9),ylim=(-3.2,3.2),title=f'Topocluster Constituents through Fastjet')
+    fi.savefig(f"{save_loc}/data_{kk}_topocl_fastjet_2d.png")
+    plt.close()
+
     ##########################################################################################################################################################################################
+    print()
 
-
-    path_to_jet_h5_file = "/srv/beegfs/scratch/shares/atlas_caloM/mu_200_truthjets/jets/JZ4/user.lbozianu/user.lbozianu.42998779._000015.jetD3PD_mc21_14TeV_JZ4.r14365.h5"
+    path_to_jet_h5_file = "/srv/beegfs/scratch/shares/atlas_caloM/mu_200_truthjets/jets/JZ4/user.lbozianu/user.lbozianu.43589851._000117.jetD3PD_mc21_14TeV_JZ4.r14365.h5"
     with h5py.File(path_to_jet_h5_file,"r") as f:
         j_data = f["caloCells"]
         jet_data = j_data["2d"][kk]
-        jet_data = remove_nan(jet_data)
+
 
     
     fi,ax = plt.subplots(1,1,figsize=(10,12)) 
-    for jet_idx in range(len(jet_data)):
+    for jet_idx in range(len(jet_data['AntiKt4EMTopoJets_JetConstitScaleMomentum_pt'])):
+        aktemtopojet = jet_data[jet_idx]
+        if np.isnan(aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_eta']):
+            continue
+        print(f"This AntiKt jet has Eta: {aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_eta']:.3f}, Phi: {aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_phi']:.3f}, ~E: {aktemtopojet['AntiKt4EMTopoJets_E']/1000:.3f} GeV, pT {aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_pt']/1000:.3f} GeV")
+        ax.plot(aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_eta'], aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_phi'], ms=(aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_pt']/1000)/10, marker='o',alpha=.6,color='seagreen')
+        ax.text(aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_eta']+0.1,aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_phi']+0.1, f"{aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_pt']/1000:.1f}",color='red',fontsize=8)
+    ax.set(xlabel='eta',ylabel='phi',xlim=(-4.9,4.9),ylim=(-3.2,3.2),title=f'AntiKt4EMTopoJets JetConstitScale')
+    fi.savefig(f"{save_loc}/data_{kk}_AntiKt4EMTopoJets_2d.png")
+    plt.close()
+    
+    print()
+    fi,ax = plt.subplots(1,1,figsize=(10,12)) 
+    for jet_idx in range(len(jet_data['AntiKt4TruthJets_pt'])):
         aktjet = jet_data[jet_idx]
-        print(f"This AntiKt jet has Eta: {aktjet['AntiKt4EMTopoJets_JetConstitScaleMomentum_eta']:.3f}, Phi: {aktjet['AntiKt4EMTopoJets_JetConstitScaleMomentum_phi']:.3f}, ~E: {aktjet['AntiKt4EMTopoJets_E']/1000:.3f} GeV, pT {aktjet['AntiKt4EMTopoJets_JetConstitScaleMomentum_pt']/1000:.3f} GeV")
-        ax.plot(aktjet['AntiKt4EMTopoJets_JetConstitScaleMomentum_eta'], aktjet['AntiKt4EMTopoJets_JetConstitScaleMomentum_phi'], ms=(aktjet['AntiKt4EMTopoJets_JetConstitScaleMomentum_pt']/1000)/10, marker='o',alpha=.6)
-        ax.text(aktjet['AntiKt4EMTopoJets_JetConstitScaleMomentum_eta']+0.1,aktjet['AntiKt4EMTopoJets_JetConstitScaleMomentum_phi']+0.1, f"{aktjet['AntiKt4EMTopoJets_JetConstitScaleMomentum_pt']/1000:.1f}",color='red',fontsize=8)
-    ax.set(xlabel='eta',ylabel='phi',xlim=(-4,4),ylim=(-3.2,3.2),title=f'AntiKt4EMTopoJets JetConstitScale')
-    fi.savefig(f"{save_loc}/{model_name}/data_{kk}_AntiKtjets_2d.png")
+        if np.isnan(aktjet['AntiKt4TruthJets_pt']):
+            continue
+        print(f"This Truth jet has Eta: {aktjet['AntiKt4TruthJets_eta']:.3f}, Phi: {aktjet['AntiKt4TruthJets_phi']:.3f}, ~E: {aktjet['AntiKt4TruthJets_E']/1000:.3f} GeV, pT {aktjet['AntiKt4TruthJets_pt']/1000:.3f} GeV")
+        ax.plot(aktjet['AntiKt4TruthJets_eta'], aktjet['AntiKt4TruthJets_phi'], ms=(aktjet['AntiKt4TruthJets_pt']/1000)/10, marker='o',alpha=.6,color='gold')
+        ax.text(aktjet['AntiKt4TruthJets_eta']+0.1,aktjet['AntiKt4TruthJets_phi']+0.1, f"{aktjet['AntiKt4TruthJets_pt']/1000:.1f}",color='black',fontsize=8)
+    ax.set(xlabel='eta',ylabel='phi',xlim=(-4.9,4.9),ylim=(-3.2,3.2),title=f'AntiKt4 Truth jets')
+    fi.savefig(f"{save_loc}/data_{kk}_AntiKt4TruthJets_2d.png")
     plt.close()
 
+    
 
