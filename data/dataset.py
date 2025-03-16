@@ -104,8 +104,11 @@ class EdgeBuilder(torch.nn.Module):
         feature_tensor = torch.tensor(feature_matrix)    
 
         # get cell IDs,we will also return the cell IDs in the "y" attribute of .Data object
-        cell_id_array  = np.expand_dims(cells2sig['cell_IdCells'],axis=1)
-        cell_id_tensor = torch.tensor(cell_id_array.astype(np.int64))
+        # cell_id_array  = np.expand_dims(cells2sig['cell_IdCells'],axis=1)
+        # cell_id_tensor = torch.tensor(cell_id_array.astype(np.int64))
+        cell_y_array = cells2sig[['cell_IdCells','cell_eta','cell_phi','cell_E']]
+        y_matrix = rf.structured_to_unstructured(cell_y_array,dtype=np.float32)
+        y_tensor = torch.tensor(y_matrix)    
 
         # make sparse adjacency matrix 
         if self.name == "bucket":
@@ -118,7 +121,7 @@ class EdgeBuilder(torch.nn.Module):
         elif self.feat=="REP":
             cols = [8,3,4,7,-1]   # r, eta, phi, pt, significance
 
-        return feature_tensor[:,cols], edge_indices, cell_id_tensor
+        return feature_tensor[:,cols], edge_indices, y_tensor
 
 
 
@@ -163,7 +166,7 @@ class CaloDataset(torch_geometric.data.Dataset):
         List of the h5 files to be opened during processing
         '''
         # return ['user.lbozianu.42998779._000026.calocellD3PD_mc21_14TeV_JZ4.r14365.h5']
-        return ["user.lbozianu.42998779._000085.calocellD3PD_mc21_14TeV_JZ4.r14365.h5"]
+        return ["user.lbozianu.43589851._000117.calocellD3PD_mc21_14TeV_JZ4.r14365.h5"]
 
     @property
     def raw_dir(self):
@@ -178,7 +181,7 @@ class CaloDataset(torch_geometric.data.Dataset):
         '''
         List of the CLUSTER h5 files to be opened during processing
         '''
-        return ["user.lbozianu.42998779._000085.topoClD3PD_mc21_14TeV_JZ4.r14365.h5"]
+        return ["user.lbozianu.43589851._000117.topoClD3PD_mc21_14TeV_JZ4.r14365.h5"]
 
     @property
     def processed_file_names(self):
@@ -231,10 +234,10 @@ class CaloDataset(torch_geometric.data.Dataset):
             n_events_in_file = len(f1["caloCells"]["2d"])
             cells_h5group = f1["caloCells"]["2d"]
             for event_no in range(n_events_in_file):
-                feature_tensor, edge_indices, cell_ids = self.builder(event_no, cells_h5group)
+                feature_tensor, edge_indices, y_tensor = self.builder(event_no, cells_h5group)
 
                 # create pyg Data object for saving
-                event_graph  = torch_geometric.data.Data(x=feature_tensor,edge_index=edge_indices,y=cell_ids) 
+                event_graph  = torch_geometric.data.Data(x=feature_tensor,edge_index=edge_indices,y=y_tensor) 
                 self.transform(event_graph)
 
                 print("\tEvent graph made, saving... in here:", osp.join(self.processed_dir, f'event_graph_{idx}.pt'))
