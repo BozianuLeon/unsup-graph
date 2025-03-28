@@ -6,6 +6,7 @@ import numpy as np
 import numpy.lib.recfunctions as rf
 
 import argparse
+import os
 import os.path as osp
 
 
@@ -15,7 +16,7 @@ def get_bucket_edges(cells2sig, mask2sig, neighbours_array, src_neighbours_array
     '''
     Function to calculate edges between nodes in neighbouring buckets of eta,phi.
     No limit on number of edges, inputs are a subset of all cells. Max number of 
-    neighbours is ~750.
+    edges for a single node is ~750.
     Inputs:
         cells2sig: numpy struct array, containing cell information for cells with 
             |significance|>2 
@@ -40,6 +41,52 @@ def get_bucket_edges(cells2sig, mask2sig, neighbours_array, src_neighbours_array
     # filter cell neighbours, only >2sigma and remove padded -999 values
     actual_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_2), cell_neighb_2, np.nan) # actual cells we can use from cell_neighbours
     actual_src_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_2), src_cell_neighb_2, np.nan) 
+
+    # find the cellID indices from cell_ids_2, what index are they in this event?
+    neighb_2sig_indices = np.searchsorted(cell_ids_2,actual_cell_neighb_2)
+    neighb_src_2sig_indices = np.searchsorted(cell_ids_2,actual_src_cell_neighb_2)
+
+    # use the nan array to again extract just the valid node indices we want
+    dst_node_indices = neighb_2sig_indices[~np.isnan(actual_cell_neighb_2)]
+    src_node_indices = neighb_src_2sig_indices[~np.isnan(actual_src_cell_neighb_2)]
+
+    edge_indices = np.stack((dst_node_indices,src_node_indices),axis=0)
+    return torch.tensor(edge_indices)
+
+
+def get_custom_edges(cells, neighbours_array, src_neighbours_array):
+    '''
+    Function to calculate edges between nodes in neighbouring buckets of eta,phi.
+    Take all of 2 sigma cells, then connect them to all >3 sigma cells in the
+    neighbouring buckets.
+    Inputs:
+        cells: numpy struct array, containing all cell information, 
+            to be masked differently for |significance| > 2 or 3
+        neighbours_array: numpy.array, LUT calculating fixed cell neighbours based on 
+            eta-phi buckets
+        src_neighbours_array: numpy.array, LUT as neighbours_array containing the source
+            nodes to match the dest nodes to make edge_indices in sparse tensor format
+    Outputs:
+        edge_indices: torch.tensor, tensor containing sparse adjacency matrix indices for
+            cells passing significance threshold, shape [2,num_edges]
+    '''
+
+    mask2sig = abs(cells['cell_E'] / cells['cell_Sigma']) >= 2
+    cells2sig = cells[mask2sig]
+    mask3sig = abs(cells['cell_E'] / cells['cell_Sigma']) >= 3
+    cells3sig = cells[mask3sig]
+
+    # get cell IDs, used to mask the cells we have access to for this event
+    cell_ids_2 = np.array(cells2sig['cell_IdCells'].astype(int))
+    cell_ids_3 = np.array(cells3sig['cell_IdCells'].astype(int))
+
+    # get the neighbour arrays for the 2 sigma cells
+    cell_neighb_2 = neighbours_array[mask2sig]
+    src_cell_neighb_2 = src_neighbours_array[mask2sig]
+
+    # filter cell neighbours, only >3sigma and remove padded -999 values
+    actual_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_3), cell_neighb_2, np.nan) # actual cells we can use from cell_neighbours
+    actual_src_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_3), src_cell_neighb_2, np.nan) 
 
     # find the cellID indices from cell_ids_2, what index are they in this event?
     neighb_2sig_indices = np.searchsorted(cell_ids_2,actual_cell_neighb_2)
@@ -80,8 +127,9 @@ class EdgeBuilder(torch.nn.Module):
                          "src_neighbours_array" : np.load(self.graph_dir+'/pyg/src_cell_neighbours.npy')}
 
         elif self.name=="custom":
-            # to be implemented 
-            self.builder = get_bucket_edges
+            self.builder = get_custom_edges
+            self.args = {"neighbours_array"     : np.load(self.graph_dir+'/pyg/cell_neighbours.npy'),
+                         "src_neighbours_array" : np.load(self.graph_dir+'/pyg/src_cell_neighbours.npy')}
 
         else:
             print("Please specify a valid builder (knn, rad, bucket) with sufficient arguments")
@@ -113,6 +161,8 @@ class EdgeBuilder(torch.nn.Module):
         # make sparse adjacency matrix 
         if self.name == "bucket":
             edge_indices = self.builder(cells2sig, mask_2sigma, **self.args)
+        elif self.name == "custom":
+            edge_indices = self.builder(cells, **self.args)
         else:
             edge_indices = self.builder(feature_tensor[:,[0,1,2]], **self.args)
         
@@ -249,7 +299,7 @@ class CaloDataset(torch_geometric.data.Dataset):
         data = torch.load(osp.join(self.processed_dir, f'event_graph_{idx}.pt'), weights_only=False)
         return data
     
-    def get_clusteres(self, idx):
+    def get_clusters(self, idx):
         # idx tells us which event from all h5 files,
         # need to find the file first, then get the event no
 
@@ -263,9 +313,6 @@ class CaloDataset(torch_geometric.data.Dataset):
                 cl_data = f2["caloCells"] 
                 event_data   = cl_data["1d"][idx]
                 cluster_data = cl_data["2d"][idx]
-                print(event_data.dtype)
-                print()
-                print(cluster_data.dtype)
 
                 cl_pts = cluster_data['cl_pt'][np.isfinite(cluster_data['cl_pt'])] # [~np.isnan(cl_pts)]
                 cl_E_em  = cluster_data['cl_E_em'][np.isfinite(cluster_data['cl_E_em'])]
@@ -306,9 +353,12 @@ if __name__ == "__main__":
     event_no = 2
     event0 = mydata[event_no]
     print(event0)
-    event0_cl = mydata.get_clusteres(event_no)
+    event0_cl = mydata.get_clusters(event_no)
     print(event0_cl.keys())
-    quit()
+
+
+    save_loc = osp.join(args.out,osp.pardir) + "/plots/inputs/"
+    if not os.path.exists(save_loc): os.makedirs(save_loc)
 
     import matplotlib.pyplot as plt
     fig = plt.figure(figsize=(12, 8))
@@ -318,7 +368,6 @@ if __name__ == "__main__":
         x_src, y_src, z_src, *feat = event0.x[src]
         x_dst, y_dst, z_dst, *feat = event0.x[dst]
         ax.plot([x_src, x_dst], [z_src, z_dst], [y_src, y_dst], c='r')
-    ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Example Event Graph')
+    ax.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'Example Event Graph ({event0.edge_index.shape[1]} edges)')
     plt.show()
-    fig.savefig(f"./plots/inputs/ex-event-{event_no}.png", bbox_inches="tight")
-
+    fig.savefig(save_loc+f"/ex-{args.name}-{args.feat}-event-{event_no}.png", bbox_inches="tight")
