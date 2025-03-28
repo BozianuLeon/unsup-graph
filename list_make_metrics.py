@@ -216,10 +216,11 @@ if __name__=="__main__":
                 gnn_jet_pt,gnn_jet_eta,gnn_jet_phi,gnn_jet_e = [],[],[],[]
                 for gnnjet in range(len(gnn_pred_jets_inc)):
                     gnn_jet_in_question = gnn_pred_jets_inc[gnnjet]
-                    gnn_jet_pt.append(gnn_jet_in_question.pt())
-                    gnn_jet_eta.append(gnn_jet_in_question.eta())
-                    gnn_jet_phi.append(gnn_jet_in_question.phi())
-                    gnn_jet_e.append(gnn_jet_in_question.E())
+                    if gnn_jet_in_question.pt() > 0.0:
+                        gnn_jet_pt.append(gnn_jet_in_question.pt())
+                        gnn_jet_eta.append(gnn_jet_in_question.eta())
+                        gnn_jet_phi.append(gnn_jet_in_question.phi())
+                        gnn_jet_e.append(gnn_jet_in_question.E())
 
                 tot_gnn_jet_pt.append(gnn_jet_pt)
                 tot_gnn_jet_eta.append(gnn_jet_eta)

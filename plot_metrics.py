@@ -16,10 +16,13 @@ def load_object(fname):
     with open(fname,'rb') as file:
         return pickle.load(file)
 
-
-
-
-metrics_folder = "/home/users/b/bozianu/work/calo-cluster/unsup-graph/cache/DMoN_caloXYZ_bucket_200c_32e/20250314-12/"
+features = "XYZ"
+builder = "custom"
+n_clus = 550
+n_epochs = 32
+model_name = "DMoN_calo{}_{}_{}c_{}e".format(features,builder,n_clus,n_epochs)
+time = "20250321-06"
+metrics_folder = f"/home/users/b/bozianu/work/calo-cluster/unsup-graph/cache/{model_name}/{time}/"
 save_folder = metrics_folder + "/plots/"
 image_format="png"
 print("Save location: ", save_folder)
@@ -35,6 +38,7 @@ def clip_phi(phi_values):
 total_gnn_cl_pt = np.concatenate(load_object(metrics_folder+'tot_gnn_pt.pkl'))/1000
 total_gnn_cl_eta = np.concatenate(load_object(metrics_folder+'tot_gnn_eta.pkl'))
 total_gnn_cl_phi = clip_phi(np.concatenate(load_object(metrics_folder+'tot_gnn_phi.pkl')))
+total_gnn_cl_e = np.concatenate(load_object(metrics_folder+'tot_gnn_e.pkl'))/1000
 #gnn jets
 event_gnn_jet_cl_pt = load_object(metrics_folder+'tot_gnn_jet_pt.pkl')
 total_gnn_jet_cl_pt = np.concatenate(event_gnn_jet_cl_pt)/1000
@@ -44,6 +48,7 @@ total_gnn_jet_cl_phi = clip_phi(np.concatenate(load_object(metrics_folder+'tot_g
 total_tcl_pt = np.concatenate(load_object(metrics_folder+'tot_cl_pt.pkl'))/1000
 total_tcl_eta = np.concatenate(load_object(metrics_folder+'tot_cl_eta.pkl'))
 total_tcl_phi = clip_phi(np.concatenate(load_object(metrics_folder+'tot_cl_phi.pkl')))
+total_tcl_e = np.concatenate(load_object(metrics_folder+'tot_cl_e.pkl'))/1000
 # topocluster jets 
 event_tcl_jet_pt = load_object(metrics_folder+'tot_cl_jet_pt.pkl')
 total_tcl_jet_pt = np.concatenate(event_tcl_jet_pt)/1000
@@ -59,7 +64,8 @@ event_tru_jet_pt =  load_object(metrics_folder+'tot_tru_pt.pkl')
 total_tru_jet_pt = np.concatenate(event_tru_jet_pt)/1000
 total_tru_jet_eta =  np.concatenate(load_object(metrics_folder+'tot_tru_eta.pkl'))
 total_tru_jet_phi =  clip_phi(np.concatenate(load_object(metrics_folder+'tot_tru_phi.pkl')))
-
+print(max(total_tru_jet_eta))
+print(max(total_gnn_jet_cl_eta))
 
 
 print("=======================================================================================================")
@@ -74,6 +80,16 @@ ax0.legend(loc='lower left',bbox_to_anchor=(0.75, 0.8),fontsize="medium")
 hep.atlas.label(ax=ax0,label='Work in Progress',data=False,lumi=None,loc=1)
 ax0.set(yscale='log',xlabel='Cluster $p_{\mathrm{T}}$ EM Scale [GeV]')
 f.savefig(save_folder + f'/cluster_pt_total.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
+plt.close()
+
+f,ax0 = plt.subplots(1,1,figsize=(9, 6))
+freq_pred, bins, _   = ax0.hist(total_gnn_cl_e,bins=100,density=True,histtype='step',color='dodgerblue',lw=1.5,label='DMoN')
+freq_tar, bins, _    = ax0.hist(total_tcl_e,bins=bins,density=True,histtype='step',color='green',lw=1.5,label='TC')
+# ax0.set_title('Energy', fontsize=16, fontfamily="TeX Gyre Heros")
+ax0.legend(loc='lower left',bbox_to_anchor=(0.75, 0.8),fontsize="medium")
+hep.atlas.label(ax=ax0,label='Work in Progress',data=False,lumi=None,loc=1)
+ax0.set(yscale='log',xlabel='Cluster Energy EM Scale [GeV]')
+f.savefig(save_folder + f'/cluster_e_total.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
 plt.close()
 
 f,ax0 = plt.subplots(1,1,figsize=(9, 6))
