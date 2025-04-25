@@ -54,7 +54,7 @@ def get_bucket_edges(cells2sig, mask2sig, neighbours_array, src_neighbours_array
     return torch.tensor(edge_indices)
 
 
-def get_custom_edges(cells, neighbours_array, src_neighbours_array):
+def get_custom_edges(cells, neigh_3x3, src_neigh_3x3, neigh_9x9, src_neigh_9x9):
     '''
     Function to calculate edges between nodes in neighbouring buckets of eta,phi.
     Take all of 2 sigma cells, then connect them to all >3 sigma cells in the
@@ -62,15 +62,46 @@ def get_custom_edges(cells, neighbours_array, src_neighbours_array):
     Inputs:
         cells: numpy struct array, containing all cell information, 
             to be masked differently for |significance| > 2 or 3
-        neighbours_array: numpy.array, LUT calculating fixed cell neighbours based on 
-            eta-phi buckets
-        src_neighbours_array: numpy.array, LUT as neighbours_array containing the source
+        neigh_3x3: numpy.array, LUT calculating fixed cell neighbours based on 
+            3x3 windows in eta-phi buckets
+        src_neigh_3x3: numpy.array, LUT same as neigh_3x3 containing the source
+            nodes to match the dest nodes to make edge_indices in sparse tensor format
+        neigh_9x9: numpy.array, LUT calculating fixed cell neighbours based on 
+            9x9 windows in eta-phi buckets
+        src_neigh_9x9: numpy.array, LUT same as neigh_9x9 containing the source
             nodes to match the dest nodes to make edge_indices in sparse tensor format
     Outputs:
         edge_indices: torch.tensor, tensor containing sparse adjacency matrix indices for
             cells passing significance threshold, shape [2,num_edges]
     '''
 
+
+    # First, deal with the seed cells:
+    mask4sig = abs(cells['cell_E'] / cells['cell_Sigma']) >= 4
+    cells4sig = cells[mask4sig]
+    cell_ids_4 = np.array(cells4sig['cell_IdCells'].astype(int))
+
+    # get the neighbours from the 9x9 LUT
+    cell_neighb_9x9_4 = neigh_9x9[mask4sig]
+    src_cell_neighb_9x9_4 = src_neigh_9x9[mask4sig]
+
+    # but not all of the cells that are neighbours exceed 4 sigma. Filter out low sig cells (+ 999 padded values)
+    actual_cell_neighb_4 = np.where(np.isin(cell_neighb_9x9_4,cell_ids_4), cell_neighb_9x9_4, np.nan) # actual cells we can use from cell_neighbours
+    actual_src_cell_neighb_4 = np.where(np.isin(cell_neighb_9x9_4,cell_ids_4), src_cell_neighb_9x9_4, np.nan) 
+
+    # translate from cell ID to index, used in this event
+    neighb_4sig_indices = np.searchsorted(cell_ids_4,actual_cell_neighb_4)
+    neighb_src_4sig_indices = np.searchsorted(cell_ids_4,actual_src_cell_neighb_4)
+
+    # use the nan array to again extract just the valid node indices we want
+    dst_node_4_indices = neighb_4sig_indices[~np.isnan(actual_cell_neighb_4)]
+    src_node_4_indices = neighb_src_4sig_indices[~np.isnan(actual_src_cell_neighb_4)]
+    edge_indices_4 = np.stack((dst_node_4_indices,src_node_4_indices),axis=0)
+
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    # Now, deal with 2 sigma cells:
+    # they only connect to >3 sigma cells in a smaller 3x3 window
     mask2sig = abs(cells['cell_E'] / cells['cell_Sigma']) >= 2
     cells2sig = cells[mask2sig]
     mask3sig = abs(cells['cell_E'] / cells['cell_Sigma']) >= 3
@@ -81,10 +112,10 @@ def get_custom_edges(cells, neighbours_array, src_neighbours_array):
     cell_ids_3 = np.array(cells3sig['cell_IdCells'].astype(int))
 
     # get the neighbour arrays for the 2 sigma cells
-    cell_neighb_2 = neighbours_array[mask2sig]
-    src_cell_neighb_2 = src_neighbours_array[mask2sig]
+    cell_neighb_2 = neigh_3x3[mask2sig]
+    src_cell_neighb_2 = src_neigh_3x3[mask2sig]
 
-    # filter cell neighbours, only >3sigma and remove padded -999 values
+    # again, not all neighbours pass the 3(!) sigma threshold (+ remove 999 pad values)
     actual_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_3), cell_neighb_2, np.nan) # actual cells we can use from cell_neighbours
     actual_src_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_3), src_cell_neighb_2, np.nan) 
 
@@ -93,11 +124,13 @@ def get_custom_edges(cells, neighbours_array, src_neighbours_array):
     neighb_src_2sig_indices = np.searchsorted(cell_ids_2,actual_src_cell_neighb_2)
 
     # use the nan array to again extract just the valid node indices we want
-    dst_node_indices = neighb_2sig_indices[~np.isnan(actual_cell_neighb_2)]
-    src_node_indices = neighb_src_2sig_indices[~np.isnan(actual_src_cell_neighb_2)]
+    dst_node_2_indices = neighb_2sig_indices[~np.isnan(actual_cell_neighb_2)]
+    src_node_2_indices = neighb_src_2sig_indices[~np.isnan(actual_src_cell_neighb_2)]
 
-    edge_indices = np.stack((dst_node_indices,src_node_indices),axis=0)
-    return torch.tensor(edge_indices)
+    edge_indices_2 = np.stack((dst_node_2_indices,src_node_2_indices),axis=0)
+    print(edge_indices_4.shape,edge_indices_2.shape)
+
+    return torch.tensor(np.hstack((edge_indices_4, edge_indices_2)))
 
 
 
@@ -144,11 +177,12 @@ class EdgeBuilder(torch.nn.Module):
         # get cell feature matrix from struct array 
         # TODO: instead of x,y,z coords give radius (or bucketized radius) instead
         cell_significance = np.expand_dims(abs(cells2sig['cell_E'] / cells2sig['cell_Sigma']),axis=1)
+        cell_phi_2pi = np.expand_dims(cells2sig['cell_phi']%(2*np.pi),axis=1)
         cell_radius = np.sqrt(np.power(cells2sig['cell_xCells'],2) + np.power(cells2sig['cell_yCells'],2) + np.power(cells2sig['cell_zCells'],2))
         cell_radius = np.expand_dims(cell_radius, axis=1)
         cell_features = cells2sig[['cell_xCells','cell_yCells','cell_zCells','cell_eta','cell_phi','cell_E','cell_Sigma','cell_pt']]
         feature_matrix = rf.structured_to_unstructured(cell_features,dtype=np.float32)
-        feature_matrix = np.hstack((feature_matrix,cell_radius,cell_significance))
+        feature_matrix = np.hstack((feature_matrix,cell_radius,cell_phi_2pi,cell_significance))
         feature_tensor = torch.tensor(feature_matrix)    
 
         # get cell IDs,we will also return the cell IDs in the "y" attribute of .Data object
@@ -168,8 +202,14 @@ class EdgeBuilder(torch.nn.Module):
         
         if self.feat=="XYZ":
             cols = [0,1,2,7,-1] # x, y, z, pt, significance
+        elif self.feat=="GEO":
+            cols = [0,1,2] # x, y, z
+        elif self.feat=="CYL":
+            cols = [8,3,4] # r, eta, phi
         elif self.feat=="REP":
             cols = [8,3,4,7,-1]   # r, eta, phi, pt, significance
+        elif self.feat=="REPP":
+            cols = [8,3,4,9,7,-1]   # r, eta, phi, phi(mod2pi), pt, significance
 
         return feature_tensor[:,cols], edge_indices, y_tensor
 
@@ -205,8 +245,7 @@ class CaloDataset(torch_geometric.data.Dataset):
         self.transform = transform if transform!=None else torch_geometric.transforms.RemoveDuplicatedEdges() # https://github.com/pyg-team/pytorch_geometric/discussions/7427
         # TODO: Look into  -  torch_geometric.transforms.RemoveIsolatedNodes, 
         print('1.',self.__dict__)
-        print('2. root dir',root)
-        print('3. raw  dir',self.raw_dir)
+        print('2. root dir',self.root, ' raw dir', self.raw_dir)
         super().__init__(self.root, self.transform)
 
 
@@ -215,7 +254,8 @@ class CaloDataset(torch_geometric.data.Dataset):
         '''
         List of the h5 files to be opened during processing
         '''
-        # return ['user.lbozianu.42998779._000026.calocellD3PD_mc21_14TeV_JZ4.r14365.h5']
+        # file_ids = ["117", "116", "115", "114", "113"]#, "112", "111"]
+        # return [f"user.lbozianu.43589851._000{file_id}.calocellD3PD_mc21_14TeV_JZ4.r14365.h5" for file_id in file_ids]
         return ["user.lbozianu.43589851._000117.calocellD3PD_mc21_14TeV_JZ4.r14365.h5"]
 
     @property
@@ -229,9 +269,12 @@ class CaloDataset(torch_geometric.data.Dataset):
     @property
     def raw_cl_file_names(self):
         '''
-        List of the CLUSTER h5 files to be opened during processing
+        List of the CLUSTER h5 files to be opened during processing,
+        Approx. ~2200 events per file
         '''
-        return ["user.lbozianu.43589851._000117.topoClD3PD_mc21_14TeV_JZ4.r14365.h5"]
+        # file_ids = ["117", "116", "115", "114", "113"]#, "112", "111"]
+        # return [f"user.lbozianu.43589851._000{file_id}.topoClD3PD_mc21_14TeV_JZ4.r14365.h5" for file_id in file_ids]
+        return [f"user.lbozianu.43589851._000117.topoClD3PD_mc21_14TeV_JZ4.r14365.h5"]
 
     @property
     def processed_file_names(self):
