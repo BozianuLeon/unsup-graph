@@ -9,7 +9,7 @@ from torch_geometric.nn.dense.mincut_pool import _rank3_trace
 EPS = 1e-15
 
 
-class DMoNPooling(torch.nn.Module):
+class CustomDMoNPooling(torch.nn.Module):
     def __init__(self, channels, k, dropout: float = 0.0):
         super().__init__()
         if isinstance(channels, int):
@@ -27,6 +27,7 @@ class DMoNPooling(torch.nn.Module):
         self,
         x,
         adj,
+        target_num_clusters,
         mask,
     ):
         r"""Forward pass.
@@ -40,6 +41,10 @@ class DMoNPooling(torch.nn.Module):
                 being created within this method.
             adj (torch.Tensor): Adjacency tensor
                 :math:`\mathbf{A} \in \mathbb{R}^{B \times N \times N}`.
+            target_num_clusters (torch.Tensor): Integer that gives the number 
+                of columns to be kept in the cluster assignment matrix. 
+                Effectively zeroes out additional columns. Forces fewer
+                clusters to be used. EXPERIMENTAL.
             mask (torch.Tensor, optional): Mask matrix
                 :math:`\mathbf{M} \in {\{ 0, 1 \}}^{B \times N}` indicating
                 the valid nodes for each graph. (default: :obj:`None`)
@@ -64,36 +69,17 @@ class DMoNPooling(torch.nn.Module):
         mask = mask.view(batch_size, num_nodes, 1).to(x.dtype)
         x, s = x * mask, s * mask
 
-        # Perhaps add something here, but need to match indices/nodes with batch size etc
+        # Adding column suppression thing here, but need to match indices/nodes with batch size etc
         # if we turn this on from the start, it is likely to stunt the growth of certain 
-        # columns/weights in the network. Turn on after some prelim training?
-        print("mask\n",mask)
-        print(s.shape, mask.shape)
-        print("s\n",s)
-        print()
-        col_sum = torch.sum(s,dim=1,keepdim=True) # [B,1,num_clusters]
-        print(col_sum)
-        print(col_sum.shape)
-        print()
-        _, min_cols = torch.min(col_sum,dim=2,keepdim=True) # [B,1,1]
-        print(min_cols)
-        print(min_cols.shape)
-        print()
-        _, bottomk_cols = torch.topk(col_sum,k=2,dim=2,largest=False) # [B,1,topk]
-        print(bottomk_cols)
-        print(bottomk_cols.shape)
-        print()
-        batch_idx = torch.arange(s.shape[0]).view(s.shape[0],1,1)
-        print(batch_idx)
-        print(batch_idx.shape)
-        print(s)
-        s[batch_idx,:,bottomk_cols] = 0
-        print(s)
+        # columns/weights in the network. Turn on after some prelim training? (with high cluster events?)
+        # use number of 5 sigma cells - number of proto/topoclusters? Just number of 5 sigma cells
 
-        print()
-        print()
-        quit()
-        print()
+        col_sum = torch.sum(s,dim=1,keepdim=True) # B x 1 x C
+        _, bottomk_cols = torch.topk(col_sum,k=C-target_num_clusters,dim=2,largest=False) # B x 1 x topk
+        batch_idx = torch.arange(batch_size).view(batch_size,1,1) # B x 1 x 1
+        s[batch_idx,:,bottomk_cols] = 0 # B x N x C
+
+
         out = F.selu(torch.matmul(s.transpose(1, 2), x)) # features pooled
         out_adj = torch.matmul(torch.matmul(s.transpose(1, 2), adj), s)
 
@@ -165,28 +151,27 @@ class Net(torch.nn.Module):
         self.conv1 = GCNConv(in_channels, hidden_channels)
         self.relu  = torch.nn.ReLU()
         self.selu  = torch.nn.SELU()
-        self.pool1 = DMoNPooling(hidden_channels,out_channels)
+        self.pool1 = CustomDMoNPooling(hidden_channels,out_channels)
 
     def forward(self, x, edge_index, batch):
-        print(f"1.x {x.shape}")
-        print(f"1edge_index {edge_index.shape}")
+        # print(f"1.x {x.shape}")
+        # print(f"1edge_index {edge_index.shape}")
         x = self.norm(x)
-        print(f"2.x {x.shape}")
+        # print(f"2.x {x.shape}")
         x = self.conv1(x, edge_index)
-        print(f"3.x {x.shape}")
+        # print(f"3.x {x.shape}")
         x = self.selu(x)
-        print(f"4.x {x.shape}")
+        # print(f"4.x {x.shape}")
 
         x, mask = torch_geometric.utils.to_dense_batch(x, batch)
-        print(f"5.x {x.shape}")
+        # print(f"5.x {x.shape}")
         adj = torch_geometric.utils.to_dense_adj(edge_index, batch, max_num_nodes=x.shape[1])
-        print(f"5adj. {adj.shape}")
+        # print(f"5adj. {adj.shape}")
 
-        s, x, adj, sp1, o1, c1 = self.pool1(x, adj, mask)
-        print(f"6.x {x.shape}")
-        print(f"7.s {s.shape}")
-        print(s)
-        print(f"8.loss {sp1:.7f}, {o1:.7f}, {c1:.7f}")
+        s, x, adj, sp1, o1, c1 = self.pool1(x, adj, int(x.shape[1]/2), mask)
+        # print(f"6.x {x.shape}")
+        # print(f"7.s {s.shape}")
+        # print(f"8.loss {sp1:.7f}, {o1:.7f}, {c1:.7f}")
 
         return F.log_softmax(x, dim=-1), sp1+o1+c1, s
 
@@ -237,9 +222,21 @@ if __name__=="__main__":
     print(f"Clustering loss: {loss.item()}")
     print(f"Assignment matrix shape: {assignment.shape}")  # Shape: [1, num_nodes, out_channels]
 
-# In two events
-0.0003385, 0.9183854, 0.0026324
-0.9213563203811646
+
 # All in same event/batch:
-0.0002484, 0.9183720, 0.0026218
-0.9212422370910645
+# spectral_loss, ortho_loss, cluster_loss (collapse)
+-0.0006341, 0.9974543, 0.0009439
+0.9977641105651855
+# In two events
+0.0001665, 0.9974591, 0.0009483
+0.9985738396644592
+# In two events, with 1 column zeroed out:
+0.0003891, 0.9970251, -0.1131383
+0.8842759132385254
+# In two events, with 2 columns zeroed out:
+0.0007372, 0.9960648, -0.2685924
+0.7282096743583679
+# In two events, with 3 columns zeroed out:
+0.0001454, 1.0000000, -0.4810774
+0.5190680027008057
+
