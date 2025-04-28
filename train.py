@@ -104,7 +104,7 @@ if __name__=='__main__':
     test_loader  = DataLoader(test_data, batch_size=config["BS"], num_workers=config["NW"])
 
     # instantiate model, optimizer
-    feat_dict = {"XYZ": 5, "REP": 5, "REPP": 6, "GEO": 3}
+    feat_dict = {"XYZ": 5, "REP": 5, "REPP": 6, "GEO": 3, "CYL": 3}
     model = models.Net(feat_dict[config["features"]], config["n_clus"]).to(config["device"])
     total_params = sum(p.numel() for p in model.parameters())
     print(f'DMoN (single conv layer) \t{total_params:,} total parameters.\n')
