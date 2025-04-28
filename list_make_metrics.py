@@ -121,6 +121,7 @@ if __name__=="__main__":
     # with h5py.File(path_to_cl_h5_file,"r") as f1:
     #     cl_data = f1["caloCells"]
     c_data = h5py.File(path_to_cl_h5_file,"r")
+    cl_event_data = c_data["caloCells"]["1d"]
     cl_data = c_data["caloCells"]["2d"]
     path_to_jet_h5_file = "/srv/beegfs/scratch/shares/atlas_caloM/mu_200_truthjets/jets/JZ4/user.lbozianu/user.lbozianu.43589851._000117.jetD3PD_mc21_14TeV_JZ4.r14365.h5"
     # with h5py.File(path_to_jet_h5_file,"r") as f2:
@@ -128,9 +129,9 @@ if __name__=="__main__":
     j_data = h5py.File(path_to_jet_h5_file,"r")
     jet_data = j_data["caloCells"]["2d"]
 
-    train_data = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
-    valid_data = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
-    test_data  = data.CaloDataset(root=args.root, name=config["builder"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
+    train_data = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
+    valid_data = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
+    test_data  = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
     print('\ttrain / val / test size : ',len(train_data),'/',len(valid_data),'/',len(test_data),'\n')
 
     train_loader = DataLoader(train_data, batch_size=config["BS"], num_workers=config["NW"])
@@ -138,7 +139,8 @@ if __name__=="__main__":
     test_loader  = DataLoader(test_data, batch_size=config["BS"], num_workers=config["NW"])
 
     # instantiate model
-    model = models.Net(5, config["n_clus"]).to(config["device"])
+    feat_dict = {"XYZ": 5, "REP": 5, "REPP": 6, "GEO": 3}
+    model = models.Net(feat_dict[config["features"]], config["n_clus"]).to(config["device"])
     total_params = sum(p.numel() for p in model.parameters())
     print(f'DMoN (single conv layer) \t{total_params:,} total parameters.\n')
     model_name = "DMoN_calo{}_{}_{}c_{}e".format(config["features"],config["builder"],config["n_clus"],config["n_epochs"])
@@ -156,12 +158,13 @@ if __name__=="__main__":
     tcjetdef = fastjet.JetDefinition(fastjet.antikt_algorithm, 0.4)
     with torch.inference_mode():
         dmon_jets, topocl_jets = [], []
-        tot_gnn_pt,tot_gnn_eta,tot_gnn_phi,tot_gnn_e = [],[],[],[]
+        tot_n_tc, tot_n_gnn = [], []
+        tot_gnn_pt,tot_gnn_eta,tot_gnn_phi,tot_gnn_e,tot_gnn_n_cell = [],[],[],[],[]
         tot_gnn_jet_pt,tot_gnn_jet_eta,tot_gnn_jet_phi,tot_gnn_jet_e = [],[],[],[] # new, maybe not necessary
-        tot_cl_pt,tot_cl_eta,tot_cl_phi,tot_cl_e = [],[],[],[]
+        tot_cl_pt,tot_cl_eta,tot_cl_phi,tot_cl_e,tot_cl_n_cell = [],[],[],[],[]
         tot_cl_jet_pt,tot_cl_jet_eta,tot_cl_jet_phi,tot_cl_jet_e = [],[],[],[] # new, maybe not necessary
-        tot_akt_pt,tot_akt_eta,tot_akt_phi = [],[],[]
-        tot_tru_pt,tot_tru_eta,tot_tru_phi = [],[],[]
+        tot_akt_pt,tot_akt_eta,tot_akt_phi,tot_akt_m = [],[],[],[]
+        tot_tru_pt,tot_tru_eta,tot_tru_phi,tot_tru_e,tot_tru_m = [],[],[],[],[]
         for step, data in enumerate(test_loader):
             print(step)
             data = data.to(config["device"])
@@ -181,12 +184,13 @@ if __name__=="__main__":
                 # force each node to its most likely cluster, no soft assignment
                 predicted_classes = clus_i.squeeze().argmax(dim=1).numpy()
                 unique_values, counts = np.unique(predicted_classes, return_counts=True)
+                tot_n_gnn.append(len(unique_values))
 
                 # loop over GNN clusters
                 # and make jets out of our clusters
                 m = 0 # clusters are considered massless
                 gnn_jet_constituents = []
-                gnn_pt,gnn_eta,gnn_phi,gnn_e = [],[],[],[]
+                gnn_pt,gnn_eta,gnn_phi,gnn_e,gnn_n_cell = [],[],[],[],[]
                 for cl_idx in range(len(unique_values)):
                     cluster_i_mask = predicted_classes == unique_values[cl_idx]
                     cl_feat_cell_i = x_i[cluster_i_mask, :] # no longer have eta-phi in the eval_graph.x when feat=XYZ
@@ -201,11 +205,13 @@ if __name__=="__main__":
                     cl_et = np.sin(cl_theta)*cl_e
                     cl_pt = np.sum(cl_feat_cell_i[:,-2])
                     if np.isfinite(cl_e):
-                        # print(f"There are {len(cl_cell_i)} cells in this cluster ({cl_idx},{unique_values[cl_idx]}). Eta: {cl_eta:.3f}, Phi: {cl_phi:.3f}, E: {cl_e/1000:.3f} GeV, ET {cl_et/1000:.3f} GeV, (PT {cl_pt/1000:.3f})")
                         gnn_pt.append(cl_pt)
                         gnn_eta.append(cl_eta)
                         gnn_phi.append(cl_phi)
                         gnn_e.append(cl_e)
+                        gnn_n_cell.append(len(cl_cell_i))
+                    if cl_e > 0.0: # ensure that raw cluster energy is positive entering the jets
+                        # print(f"There are {len(cl_cell_i)} cells in this cluster ({cl_idx},{unique_values[cl_idx]}). Eta: {cl_eta:.3f}, Phi: {cl_phi:.3f}, E: {cl_e/1000:.3f} GeV, ET {cl_et/1000:.3f} GeV, (PT {cl_pt/1000:.3f})")
                         gnn_jet_constituents.append(fastjet.PseudoJet(cl_e * np.sin(cl_theta)*np.cos(cl_phi),
                                                                       cl_e * np.sin(cl_theta)*np.sin(cl_phi),
                                                                       cl_e * np.cos(cl_theta),
@@ -231,6 +237,7 @@ if __name__=="__main__":
                 tot_gnn_eta.append(gnn_eta)
                 tot_gnn_phi.append(gnn_phi)
                 tot_gnn_e.append(gnn_e)
+                tot_gnn_n_cell.append(gnn_n_cell)
 
                 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
                 # get event topo-clusters and antikt jets
@@ -238,10 +245,12 @@ if __name__=="__main__":
 
                 clusters_event_i = cl_data[event_no]
                 clusters_event_i = clusters_event_i[np.isfinite(clusters_event_i['cl_eta'])]
+                cl_event_i = cl_event_data[event_no]
+                tot_n_tc.append(cl_event_i["cl_n"]) #!
 
                 # let's make jets out of TOPOCLUSTERS
                 tc_jet_constituents = []
-                tc_pt,tc_eta,tc_phi,tc_e = [],[],[],[]
+                tc_pt,tc_eta,tc_phi,tc_e,tc_n_cell = [],[],[],[],[]
                 for cl_idx in range(len(clusters_event_i)):
                     topocl_i = clusters_event_i[cl_idx]
                     cl_eta,cl_phi = topocl_i['cl_eta'], topocl_i['cl_phi']
@@ -254,10 +263,12 @@ if __name__=="__main__":
                     tc_eta.append(cl_eta)
                     tc_phi.append(cl_phi)
                     tc_e.append(cl_e)
-                    tc_jet_constituents.append(fastjet.PseudoJet(cl_e * np.sin(cl_theta)*np.cos(cl_phi),
-                                                                cl_e * np.sin(cl_theta)*np.sin(cl_phi),
-                                                                cl_e * np.cos(cl_theta),
-                                                                m))
+                    tc_n_cell.append(topocl_i['cl_cell_n'])
+                    if cl_e > 0.0: # ensure that raw cluster energy is positive entering the jets
+                        tc_jet_constituents.append(fastjet.PseudoJet(cl_e * np.sin(cl_theta)*np.cos(cl_phi),
+                                                                    cl_e * np.sin(cl_theta)*np.sin(cl_phi),
+                                                                    cl_e * np.cos(cl_theta),
+                                                                    m))
 
                 tc_jets = fastjet.ClusterSequence(tc_jet_constituents,tcjetdef)
                 tc_jets_inc = tc_jets.inclusive_jets()
@@ -277,32 +288,39 @@ if __name__=="__main__":
                 tot_cl_eta.append(tc_eta)
                 tot_cl_phi.append(tc_phi)
                 tot_cl_e.append(tc_e)
+                tot_cl_n_cell.append(tc_n_cell)
 
                 # get antikt jets
                 jets_event_i = jet_data[event_no]
                 jets_event_i = jets_event_i[np.isfinite(jets_event_i['AntiKt4EMTopoJets_JetConstitScaleMomentum_pt'])]
-                akt_pt,akt_eta,akt_phi = [], [], []
+                akt_pt,akt_eta,akt_phi,akt_m = [], [], [], []
                 for jet_idx in range(len(jets_event_i)):
                     aktemtopojet = jets_event_i[jet_idx]
                     akt_pt.append(aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_pt'])
                     akt_eta.append(aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_eta'])
                     akt_phi.append(aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_phi'])
+                    akt_m.append(aktemtopojet['AntiKt4EMTopoJets_JetConstitScaleMomentum_m'])
                 tot_akt_pt.append(akt_pt)
                 tot_akt_eta.append(akt_eta)
                 tot_akt_phi.append(akt_phi)
+                tot_akt_m.append(akt_m)
 
                 # get truth jets
                 tru_jets_event_i = jet_data[event_no]
                 tru_jets_event_i = tru_jets_event_i[np.isfinite(tru_jets_event_i['AntiKt4TruthJets_pt'])]
-                tru_pt,tru_eta,tru_phi = [], [], []
+                tru_pt,tru_eta,tru_phi,tru_e,tru_m = [], [], [],[],[]
                 for jet_idx in range(len(tru_jets_event_i)):
                     trujet = tru_jets_event_i[jet_idx]
                     tru_pt.append(trujet['AntiKt4TruthJets_pt'])
                     tru_eta.append(trujet['AntiKt4TruthJets_eta'])
                     tru_phi.append(trujet['AntiKt4TruthJets_phi'])
+                    tru_e.append(trujet['AntiKt4TruthJets_E'])
+                    tru_m.append(trujet['AntiKt4TruthJets_m'])
                 tot_tru_pt.append(tru_pt)
                 tot_tru_eta.append(tru_eta)
                 tot_tru_phi.append(tru_phi)
+                tot_tru_e.append(tru_e)
+                tot_tru_m.append(tru_m)
 
         end = time.perf_counter()      
         print(f"Time taken for entire test set: {(end-beginning)/60:.3f} mins, (or {(end-beginning):.3f}s)")
@@ -315,6 +333,7 @@ if __name__=="__main__":
         save_object(tot_gnn_eta, save_loc+'tot_gnn_eta.pkl')
         save_object(tot_gnn_phi, save_loc+'tot_gnn_phi.pkl')
         save_object(tot_gnn_e, save_loc+'tot_gnn_e.pkl')
+        save_object(tot_gnn_n_cell, save_loc+'tot_gnn_n_cell.pkl')
         # gnn jets
         # save_object(dmon_jets, save_loc+'dmon_jets.pkl')
         save_object(tot_gnn_jet_pt, save_loc+'tot_gnn_jet_pt.pkl')
@@ -326,6 +345,7 @@ if __name__=="__main__":
         save_object(tot_cl_eta, save_loc+'tot_cl_eta.pkl')
         save_object(tot_cl_phi, save_loc+'tot_cl_phi.pkl')
         save_object(tot_cl_e, save_loc+'tot_cl_e.pkl')
+        save_object(tot_cl_n_cell, save_loc+'tot_cl_n_cell.pkl')
         # topocluster jets
         # save_object(topocl_jets, save_loc+'topocl_jets.pkl')
         save_object(tot_cl_jet_pt, save_loc+'tot_cl_jet_pt.pkl')
@@ -336,7 +356,13 @@ if __name__=="__main__":
         save_object(tot_akt_pt, save_loc+'tot_akt_pt.pkl')
         save_object(tot_akt_eta, save_loc+'tot_akt_eta.pkl')
         save_object(tot_akt_phi, save_loc+'tot_akt_phi.pkl')
+        save_object(tot_akt_m, save_loc+'tot_akt_m.pkl')
         # Truth jets
         save_object(tot_tru_pt, save_loc+'tot_tru_pt.pkl')
         save_object(tot_tru_eta, save_loc+'tot_tru_eta.pkl')
         save_object(tot_tru_phi, save_loc+'tot_tru_phi.pkl')
+        save_object(tot_tru_e, save_loc+'tot_tru_e.pkl')
+        save_object(tot_tru_m, save_loc+'tot_tru_m.pkl')
+        # number of clusters per event
+        save_object(tot_n_gnn, save_loc+'tot_n_gnn.pkl')
+        save_object(tot_n_tc, save_loc+'tot_n_tc.pkl')

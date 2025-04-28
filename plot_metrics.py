@@ -16,12 +16,12 @@ def load_object(fname):
     with open(fname,'rb') as file:
         return pickle.load(file)
 
-features = "XYZ"
-builder = "custom"
-n_clus = 550
-n_epochs = 32
+features = "GEO"
+builder = "bucket"
+n_clus = 1000
+n_epochs = 16
 model_name = "DMoN_calo{}_{}_{}c_{}e".format(features,builder,n_clus,n_epochs)
-time = "20250321-06"
+time = "20250425-13"
 metrics_folder = f"/home/users/b/bozianu/work/calo-cluster/unsup-graph/cache/{model_name}/{time}/"
 save_folder = metrics_folder + "/plots/"
 image_format="png"
@@ -32,13 +32,12 @@ def clip_phi(phi_values):
     return phi_values - 2 * np.pi * np.floor((phi_values + np.pi) / (2 * np.pi))
 
 
-
-
 # gnn clusters
 total_gnn_cl_pt = np.concatenate(load_object(metrics_folder+'tot_gnn_pt.pkl'))/1000
 total_gnn_cl_eta = np.concatenate(load_object(metrics_folder+'tot_gnn_eta.pkl'))
 total_gnn_cl_phi = clip_phi(np.concatenate(load_object(metrics_folder+'tot_gnn_phi.pkl')))
 total_gnn_cl_e = np.concatenate(load_object(metrics_folder+'tot_gnn_e.pkl'))/1000
+total_gnn_cl_n_cell = np.concatenate(load_object(metrics_folder+'tot_gnn_n_cell.pkl'))
 #gnn jets
 event_gnn_jet_cl_pt = load_object(metrics_folder+'tot_gnn_jet_pt.pkl')
 total_gnn_jet_cl_pt = np.concatenate(event_gnn_jet_cl_pt)/1000
@@ -49,6 +48,7 @@ total_tcl_pt = np.concatenate(load_object(metrics_folder+'tot_cl_pt.pkl'))/1000
 total_tcl_eta = np.concatenate(load_object(metrics_folder+'tot_cl_eta.pkl'))
 total_tcl_phi = clip_phi(np.concatenate(load_object(metrics_folder+'tot_cl_phi.pkl')))
 total_tcl_e = np.concatenate(load_object(metrics_folder+'tot_cl_e.pkl'))/1000
+total_tcl_n_cell = np.concatenate(load_object(metrics_folder+'tot_cl_n_cell.pkl'))
 # topocluster jets 
 event_tcl_jet_pt = load_object(metrics_folder+'tot_cl_jet_pt.pkl')
 total_tcl_jet_pt = np.concatenate(event_tcl_jet_pt)/1000
@@ -64,6 +64,10 @@ event_tru_jet_pt =  load_object(metrics_folder+'tot_tru_pt.pkl')
 total_tru_jet_pt = np.concatenate(event_tru_jet_pt)/1000
 total_tru_jet_eta =  np.concatenate(load_object(metrics_folder+'tot_tru_eta.pkl'))
 total_tru_jet_phi =  clip_phi(np.concatenate(load_object(metrics_folder+'tot_tru_phi.pkl')))
+
+event_gnn_n_cl =  load_object(metrics_folder+'tot_n_gnn.pkl')
+event_tc_n_cl =  load_object(metrics_folder+'tot_n_tc.pkl')
+
 print(max(total_tru_jet_eta))
 print(max(total_gnn_jet_cl_eta))
 
@@ -78,7 +82,7 @@ freq_tar, bins, _    = ax0.hist(total_tcl_pt,bins=bins,density=True,histtype='st
 ax0.set_title('Transverse Momentum', fontsize=16, fontfamily="TeX Gyre Heros")
 ax0.legend(loc='lower left',bbox_to_anchor=(0.75, 0.8),fontsize="medium")
 hep.atlas.label(ax=ax0,label='Work in Progress',data=False,lumi=None,loc=1)
-ax0.set(yscale='log',xlabel='Cluster $p_{\mathrm{T}}$ EM Scale [GeV]')
+ax0.set(yscale='log',xlabel='Cluster $p_{\mathrm{T}}$ EM Scale')
 f.savefig(save_folder + f'/cluster_pt_total.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
 plt.close()
 
@@ -88,7 +92,7 @@ freq_tar, bins, _    = ax0.hist(total_tcl_e,bins=bins,density=True,histtype='ste
 # ax0.set_title('Energy', fontsize=16, fontfamily="TeX Gyre Heros")
 ax0.legend(loc='lower left',bbox_to_anchor=(0.75, 0.8),fontsize="medium")
 hep.atlas.label(ax=ax0,label='Work in Progress',data=False,lumi=None,loc=1)
-ax0.set(yscale='log',xlabel='Cluster Energy EM Scale [GeV]')
+ax0.set(yscale='log',xlabel='Cluster Energy EM Scale')
 f.savefig(save_folder + f'/cluster_e_total.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
 plt.close()
 
@@ -110,13 +114,30 @@ ax0.set(yscale='log',xlabel='Cluster $\phi$')
 f.savefig(save_folder + f'/cluster_phi_total.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
 plt.close()
 
+f,ax0 = plt.subplots(1,1,figsize=(9, 6))
+freq_pred, bins, _   = ax0.hist(total_gnn_cl_n_cell,bins=50,density=True,histtype='step',color='dodgerblue',lw=1.5,label='DMoN')
+freq_tar, bins, _    = ax0.hist(total_tcl_n_cell,bins=50,density=True,histtype='step',color='green',lw=1.5,label='TC')
+ax0.legend(loc='lower left',bbox_to_anchor=(0.75, 0.8),fontsize="medium")
+hep.atlas.label(ax=ax0,label='Work in Progress',data=False,lumi=None,loc=1)
+ax0.set(yscale='log',xlabel='Numb. cells per cluster')
+f.savefig(save_folder + f'/cluster_n_cells_total.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
+plt.close()
+
+f,ax0 = plt.subplots(1,1,figsize=(9, 6))
+freq_pred, bins, _   = ax0.hist(event_gnn_n_cl,bins=50,density=True,histtype='step',color='dodgerblue',lw=1.5,label='DMoN')
+freq_tar, bins, _    = ax0.hist(event_tc_n_cl,bins=50,density=True,histtype='step',color='green',lw=1.5,label='TC')
+ax0.legend(loc='lower left',bbox_to_anchor=(0.75, 0.8),fontsize="medium")
+hep.atlas.label(ax=ax0,label='Work in Progress',data=False,lumi=None,loc=1)
+ax0.set(yscale='log',xlabel='Numb. clusters per event')
+f.savefig(save_folder + f'/n_cl_total.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
+plt.close()
+
 
 print("=======================================================================================================")
 print(f"Plotting jet kinematics, saving to {save_folder}")
 print("=======================================================================================================\n")
 
 f,ax0 = plt.subplots(1,1,figsize=(9, 6))
-bin_edges = [20, 40, 60, 80, 100, 120, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 850]
 bin_edges = np.arange(20,600,step=20)
 freq_pred, bins, _   = ax0.hist(total_gnn_jet_cl_pt,bins=bin_edges,density=True,histtype='step',color='dodgerblue',lw=1.5,label='DMoN')
 freq_tar, bins, _    = ax0.hist(total_tcl_jet_pt,bins=bins,density=True,histtype='step',color='green',lw=1.5,label='TC')
@@ -127,6 +148,18 @@ ax0.set_title('A single JZ slice', fontsize=16, fontfamily="TeX Gyre Heros")
 hep.atlas.label(ax=ax0,label='Work in Progress',data=False,lumi=None,loc=1)
 ax0.set(yscale='log',xlabel='Jet $p_{\mathrm{T}}$ [GeV]')
 f.savefig(save_folder + f'/jet_pt_total.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
+plt.close()
+
+f,ax0 = plt.subplots(1,1,figsize=(9, 6))
+bin_edges = [-20,0,20, 40, 60, 80, 100, 120, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650,700,750,800,850]
+freq_pred, bins, _   = ax0.hist(total_gnn_jet_cl_pt,bins=bin_edges,density=True,histtype='step',color='dodgerblue',lw=1.5,label='DMoN')
+freq_tar, bins, _    = ax0.hist(total_tcl_jet_pt,bins=bins,density=True,histtype='step',color='green',lw=1.5,label='TC')
+freq_akt, bins, _    = ax0.hist(total_akt_jet_pt,bins=bins,density=True,histtype='step',color='slategrey',lw=1.5,label='AKT4EmTopo')
+freq_tru, bins, _    = ax0.hist(total_tru_jet_pt,bins=bins,density=True,histtype='step',color='gold',lw=1.5,label='Truth')
+ax0.legend(loc='lower left',bbox_to_anchor=(0.7, 0.7),fontsize="medium")
+ax0.set(yscale='log',xlabel='Jet $p_{\mathrm{T}}$ [GeV]')
+ax0.set(xlim=(-20,875))
+f.savefig(save_folder + f'/jet_pt_all.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
 plt.close()
 
 f,ax0 = plt.subplots(1,1,figsize=(9, 6))
