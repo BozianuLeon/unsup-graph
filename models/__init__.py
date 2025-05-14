@@ -1,1 +1,1 @@
-from models.dmon import Net
+from models.dmon import Net, CustomNet

@@ -23,13 +23,7 @@ class CustomDMoNPooling(torch.nn.Module):
         r"""Resets all learnable parameters of the module."""
         self.mlp.reset_parameters()
 
-    def forward(
-        self,
-        x,
-        adj,
-        target_num_clusters,
-        mask,
-    ):
+    def forward(self,x,adj,target_num_clusters,mask):
         r"""Forward pass.
         Args:
             x (torch.Tensor): Node feature tensor
@@ -132,7 +126,6 @@ class CustomDMoNPooling(torch.nn.Module):
 
 
 
-# check which version of pytorch geometric - new updates mid-2024
 class Net(torch.nn.Module):
     '''
     Spectral modularity pooling operator from https://arxiv.org/abs/2006.16904
@@ -140,6 +133,55 @@ class Net(torch.nn.Module):
     learned cluster assignment matrix, the pooled node feature matrix, the coarse
     symmetric normalised adjacency matrix and the three(?) loss functions:
     spectral loss, orthogonality loss and cluster loss
+    
+    Returns:
+        log softmax(x), output tensor of pooled node features
+        sp1+o1+cl1, total loss term 
+        s, learned cluster assignment
+    '''
+    def __init__(self, in_channels, out_channels, hidden_channels=128):
+        super().__init__()
+
+        self.norm  = GraphNorm(in_channels)
+        self.conv1 = GCNConv(in_channels, hidden_channels)
+        self.relu  = torch.nn.ReLU()
+        self.selu  = torch.nn.SELU()
+        self.pool1 = DMoNPooling(hidden_channels,out_channels)
+
+    def forward(self, x, edge_index, batch):
+        # print(f"1.x {x.shape}")
+        # print(f"1edge_index {edge_index.shape}")
+        x = self.norm(x)
+        # print(f"2.x {x.shape}")
+        x = self.conv1(x, edge_index)
+        # print(f"3.x {x.shape}")
+        x = self.selu(x)
+        # print(f"4.x {x.shape}")
+
+        x, mask = torch_geometric.utils.to_dense_batch(x, batch)
+        # print(f"5.x {x.shape}")
+        adj = torch_geometric.utils.to_dense_adj(edge_index, batch, max_num_nodes=x.shape[1])
+        # print(f"5adj. {adj.shape}")
+
+        s, x, adj, sp1, o1, c1 = self.pool1(x, adj, mask)
+        # print(f"6.x {x.shape}")
+        # print(f"7.s {s.shape}")
+        # print(f"8.loss {sp1:.7f}, {o1:.7f}, {c1:.7f}")
+
+        return F.log_softmax(x, dim=-1), sp1+o1+c1, s
+
+
+
+
+class CustomNet(torch.nn.Module):
+    '''
+    Spectral modularity pooling operator from https://arxiv.org/abs/2006.16904
+    Pooling operator based on learned cluster assignment soft scores. Returns the 
+    learned cluster assignment matrix, the pooled node feature matrix, the coarse
+    symmetric normalised adjacency matrix and the three loss functions:
+    spectral loss, orthogonality loss and cluster loss.
+    Customised to zero out the (max_num_clusters - target_num_clusters) lowest
+    probability clusters. 
     
     Returns:
         log softmax(x), output tensor of pooled node features
@@ -170,7 +212,7 @@ class Net(torch.nn.Module):
         adj = torch_geometric.utils.to_dense_adj(edge_index, batch, max_num_nodes=x.shape[1])
         # print(f"5adj. {adj.shape}")
 
-        target_num_clusters = torch.clamp(torch.tensor(x.shape[1]/10),min=300,max=998) # n_cells / 10 or 200 whichever larger
+        target_num_clusters = torch.clamp(torch.tensor(x.shape[1]/10),min=300,max=998) # n_cells / 10 
         s, x, adj, sp1, o1, c1 = self.pool1(x, adj, int(target_num_clusters), mask)
         # print(f"6.x {x.shape}")
         # print(f"7.s {s.shape}")
@@ -226,20 +268,20 @@ if __name__=="__main__":
     print(f"Assignment matrix shape: {assignment.shape}")  # Shape: [1, num_nodes, out_channels]
 
 
-# All in same event/batch:
-# spectral_loss, ortho_loss, cluster_loss (collapse)
--0.0006341, 0.9974543, 0.0009439
-0.9977641105651855
-# In two events
-0.0001665, 0.9974591, 0.0009483
-0.9985738396644592
-# In two events, with 1 column zeroed out:
-0.0003891, 0.9970251, -0.1131383
-0.8842759132385254
-# In two events, with 2 columns zeroed out:
-0.0007372, 0.9960648, -0.2685924
-0.7282096743583679
-# In two events, with 3 columns zeroed out:
-0.0001454, 1.0000000, -0.4810774
-0.5190680027008057
+# # All in same event/batch:
+# # spectral_loss, ortho_loss, cluster_loss (collapse)
+# -0.0006341, 0.9974543, 0.0009439
+# 0.9977641105651855
+# # In two events
+# 0.0001665, 0.9974591, 0.0009483
+# 0.9985738396644592
+# # In two events, with 1 column zeroed out:
+# 0.0003891, 0.9970251, -0.1131383
+# 0.8842759132385254
+# # In two events, with 2 columns zeroed out:
+# 0.0007372, 0.9960648, -0.2685924
+# 0.7282096743583679
+# # In two events, with 3 columns zeroed out:
+# 0.0001454, 1.0000000, -0.4810774
+# 0.5190680027008057
 
