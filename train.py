@@ -46,6 +46,21 @@ def train(train_loader, device):
 
     return tot_loss / len(train_loader.dataset) 
 
+def customtrain(train_loader, device):
+    model.train()
+    tot_loss = 0
+
+    for data in train_loader:
+        data = data.to(device)
+        optimizer.zero_grad()
+        out, loss, _ = model(data.x, data.edge_index, data.n, data.batch)
+        # potentially add cos/sin weighting to the terms in the loss function
+        loss.backward()
+        tot_loss += float(loss) * data.x.size(0) # mutliply by batch size? consider changing
+        optimizer.step()
+
+    return tot_loss / len(train_loader.dataset) 
+
 
 
 @torch.no_grad()
@@ -61,6 +76,17 @@ def test(loader, device):
     return tot_loss / len(loader.dataset) 
 
 
+@torch.no_grad()
+def customtest(loader, device):
+    model.eval()
+    tot_loss = 0
+
+    for data in loader:
+        data = data.to(device)
+        pred, loss, _ = model(data.x, data.edge_index, data.n, data.batch)
+        tot_loss += float(loss) * data.x.size(0) 
+
+    return tot_loss / len(loader.dataset) 
 
 
 
@@ -71,10 +97,6 @@ if __name__=='__main__':
     config = {
         "seed"       : 0,
         "device"     : torch.device("cuda" if torch.cuda.is_available() else "cpu"), # torch.device("mps" if torch.backends.mps.is_available() else "cpu"),
-        "n_train"    : 1000,
-        "val_frac"   : 0.25,
-        "test_frac"  : 0.15,
-        "n_nodes"    : 1000,
         "builder"    : args.name,
         "features"   : args.feat,
         "graph_dir"  : args.graph_dir,
@@ -115,8 +137,10 @@ if __name__=='__main__':
     print(f"Starting training... on {config['device']}")
     for epoch in range(config["n_epochs"]):
         start = time.perf_counter()
-        train_loss = train(train_loader, config["device"])
-        val_loss   = test(val_loader, config["device"])
+        # train_loss = train(train_loader, config["device"])
+        train_loss = customtrain(train_loader, config["device"])
+        # val_loss   = test(val_loader, config["device"])
+        val_loss   = customtest(val_loader, config["device"])
         print(f"Epoch: {epoch:03d}, Train Loss: {train_loss:.3f}, Val Loss: {val_loss:.3f}, Time: {time.perf_counter() - start:.3f}s")
 
     # model_name = "DMoN_calo{}_{}_{}c_{}e".format(config["features"],config["builder"],config["n_clus"],config["n_epochs"])
