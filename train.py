@@ -165,5 +165,6 @@ if __name__=='__main__':
     scatter = ax3.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], s=eval_graph.x[:, -1]*8, marker='o')
     ax3.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'GT Graph')
     plt.show()
+    if not os.path.exists(f"plots/{model_name}"): os.makedirs(f"plots/{model_name}")
     fig.savefig(f"plots/{model_name}/test_3d_plot.png", bbox_inches="tight")
     print()
