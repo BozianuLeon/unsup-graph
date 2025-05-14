@@ -105,7 +105,8 @@ if __name__=='__main__':
 
     # instantiate model, optimizer
     feat_dict = {"XYZ": 5, "REP": 5, "REPP": 6, "GEO": 3, "CYL": 3}
-    model = models.Net(feat_dict[config["features"]], config["n_clus"]).to(config["device"])
+    # model = models.Net(feat_dict[config["features"]], config["n_clus"]).to(config["device"])
+    model = models.CustomNet(feat_dict[config["features"]], config["n_clus"]).to(config["device"])
     total_params = sum(p.numel() for p in model.parameters())
     print(f'DMoN (single conv layer) \t{total_params:,} total parameters.\n')
     optimizer = torch.optim.AdamW(model.parameters(), lr=config["LR"], weight_decay=config["WD"], amsgrad=True)  
@@ -118,10 +119,12 @@ if __name__=='__main__':
         val_loss   = test(val_loader, config["device"])
         print(f"Epoch: {epoch:03d}, Train Loss: {train_loss:.3f}, Val Loss: {val_loss:.3f}, Time: {time.perf_counter() - start:.3f}s")
 
-    model_name = "DMoN_calo{}_{}_{}c_{}e".format(config["features"],config["builder"],config["n_clus"],config["n_epochs"])
+    # model_name = "DMoN_calo{}_{}_{}c_{}e".format(config["features"],config["builder"],config["n_clus"],config["n_epochs"])
+    model_name = "customDMoN_calo{}_{}_{}c_{}e".format(config["features"],config["builder"],config["n_clus"],config["n_epochs"])
     print(f'\nSaving model now...\t{model_name}')
     if not os.path.exists(args.output_file): os.makedirs(args.output_file)
     torch.save(model.state_dict(), args.output_file+"/{}.pth".format(model_name))
+
 
 
     print(f"Finished training. Evaluating using first event of test set.")
@@ -159,7 +162,7 @@ if __name__=='__main__':
     ax2.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'DMoN Output Graph')
 
     ax3 = fig.add_subplot(133, projection='3d')
-    scatter = ax3.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], s=eval_graph.x[:, -1]*8, c=eval_graph.y, marker='o')
+    scatter = ax3.scatter(eval_graph.x[:, 0], eval_graph.x[:, 1], eval_graph.x[:, 2], s=eval_graph.x[:, -1]*8, marker='o')
     ax3.set(xlabel='X',ylabel='Y',zlabel='Z',title=f'GT Graph')
     plt.show()
     fig.savefig(f"plots/{model_name}/test_3d_plot.png", bbox_inches="tight")
