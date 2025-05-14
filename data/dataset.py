@@ -192,6 +192,10 @@ class EdgeBuilder(torch.nn.Module):
         y_matrix = rf.structured_to_unstructured(cell_y_array,dtype=np.float32)
         y_tensor = torch.tensor(y_matrix)    
 
+        # get number of cells above |significance| threshold, to be stored in .n attribute
+        cells5sig = cells2sig[abs(cells2sig['cell_E'] / cells2sig['cell_Sigma']) >= 5]
+        n_5sig_cells = len(cells5sig)
+
         # make sparse adjacency matrix 
         if self.name == "bucket":
             edge_indices = self.builder(cells2sig, mask_2sigma, **self.args)
@@ -211,7 +215,7 @@ class EdgeBuilder(torch.nn.Module):
         elif self.feat=="REPP":
             cols = [8,3,4,9,7,-1]   # r, eta, phi, phi(mod2pi), pt, significance
 
-        return feature_tensor[:,cols], edge_indices, y_tensor
+        return feature_tensor[:,cols], edge_indices, y_tensor, n_5sig_cells
 
 
 
@@ -327,10 +331,10 @@ class CaloDataset(torch_geometric.data.Dataset):
             n_events_in_file = len(f1["caloCells"]["2d"])
             cells_h5group = f1["caloCells"]["2d"]
             for event_no in range(n_events_in_file):
-                feature_tensor, edge_indices, y_tensor = self.builder(event_no, cells_h5group)
+                feature_tensor, edge_indices, y_tensor, n_tensor = self.builder(event_no, cells_h5group)
 
                 # create pyg Data object for saving
-                event_graph  = torch_geometric.data.Data(x=feature_tensor,edge_index=edge_indices,y=y_tensor) 
+                event_graph  = torch_geometric.data.Data(x=feature_tensor,edge_index=edge_indices,y=y_tensor,n=n_tensor) 
                 self.transform(event_graph)
 
                 print("\tEvent graph made, saving... in here:", osp.join(self.processed_dir, f'event_graph_{idx}.pt'))

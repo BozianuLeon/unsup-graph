@@ -63,12 +63,11 @@ class CustomDMoNPooling(torch.nn.Module):
         mask = mask.view(batch_size, num_nodes, 1).to(x.dtype)
         x, s = x * mask, s * mask
 
-        # Adding column suppression thing here, but need to match indices/nodes with batch size etc
+        # Adding column suppression here, but need to match indices/nodes with batch size etc
         # if we turn this on from the start, it is likely to stunt the growth of certain 
         # columns/weights in the network. Turn on after some prelim training? (with high cluster events?)
         # use number of 5 sigma cells - number of proto/topoclusters? Just number of 5 sigma cells
-        # sends C-target_num_clusters columns to zero! E.g 1000-600 = 400 columns sent to => 0
-
+        # sends C-target_num_clusters columns to zero! E.g 1000-600 = 400 columns sent to -> 0
         col_sum = torch.sum(s,dim=1,keepdim=True) # B x 1 x C
         _, bottomk_cols = torch.topk(col_sum,k=C-target_num_clusters,dim=2,largest=False) # B x 1 x topk
         batch_idx = torch.arange(batch_size).view(batch_size,1,1) # B x 1 x 1
@@ -196,8 +195,9 @@ class CustomNet(torch.nn.Module):
         self.relu  = torch.nn.ReLU()
         self.selu  = torch.nn.SELU()
         self.pool1 = CustomDMoNPooling(hidden_channels,out_channels)
+        self.out_channels = out_channels
 
-    def forward(self, x, edge_index, batch):
+    def forward(self, x, edge_index, n, batch):
         # print(f"1.x {x.shape}")
         # print(f"1edge_index {edge_index.shape}")
         x = self.norm(x)
@@ -212,7 +212,7 @@ class CustomNet(torch.nn.Module):
         adj = torch_geometric.utils.to_dense_adj(edge_index, batch, max_num_nodes=x.shape[1])
         # print(f"5adj. {adj.shape}")
 
-        target_num_clusters = torch.clamp(torch.tensor(x.shape[1]/10),min=300,max=998) # n_cells / 10 
+        target_num_clusters = torch.clamp(n,min=2,max=self.out_channels-1) # number of 5 sigma cells
         s, x, adj, sp1, o1, c1 = self.pool1(x, adj, int(target_num_clusters), mask)
         # print(f"6.x {x.shape}")
         # print(f"7.s {s.shape}")
