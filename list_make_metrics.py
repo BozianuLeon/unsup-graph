@@ -135,11 +135,13 @@ if __name__=="__main__":
     test_loader  = DataLoader(test_data, batch_size=config["BS"], num_workers=config["NW"])
 
     # instantiate model
-    feat_dict = {"XYZ": 5, "REP": 5, "REPP": 6, "GEO": 3}
-    model = models.Net(feat_dict[config["features"]], config["n_clus"]).to(config["device"])
+    feat_dict = {"XYZ": 5, "REP": 5, "REPP": 6, "GEO": 3, "CYL": 3}
+    # model = models.Net(feat_dict[config["features"]], config["n_clus"]).to(config["device"])
+    model = models.CustomNet(feat_dict[config["features"]], config["n_clus"]).to(config["device"])
     total_params = sum(p.numel() for p in model.parameters())
     print(f'DMoN (single conv layer) \t{total_params:,} total parameters.\n')
-    model_name = "DMoN_calo{}_{}_{}c_{}e".format(config["features"],config["builder"],config["n_clus"],config["n_epochs"])
+    # model_name = "DMoN_calo{}_{}_{}c_{}e".format(config["features"],config["builder"],config["n_clus"],config["n_epochs"])
+    model_name = "customDMoN_calo{}_{}_{}c_{}e".format(config["features"],config["builder"],config["n_clus"],config["n_epochs"])
     model_save_path = args.model_dir + f"/{model_name}.pth"
     model.load_state_dict(torch.load(model_save_path, weights_only=True, map_location=torch.device(config["device"])))
 

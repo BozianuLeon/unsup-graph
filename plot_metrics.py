@@ -17,11 +17,12 @@ def load_object(fname):
         return pickle.load(file)
 
 features = "XYZ"
-builder = "custom"
-n_clus = 1000
-n_epochs = 32
-model_name = "DMoN_calo{}_{}_{}c_{}e".format(features,builder,n_clus,n_epochs)
-time = "20250502-11"
+builder = "bucket"
+n_clus = 1200
+n_epochs = 8
+# model_name = "DMoN_calo{}_{}_{}c_{}e".format(features,builder,n_clus,n_epochs)
+model_name = "customDMoN_calo{}_{}_{}c_{}e".format(features,builder,n_clus,n_epochs)
+time = "20250514-14"
 metrics_folder = f"/home/users/b/bozianu/work/calo-cluster/unsup-graph/cache/{model_name}/{time}/"
 save_folder = metrics_folder + "/plots/"
 image_format="png"
@@ -31,6 +32,37 @@ if not os.path.exists(save_folder): os.makedirs(save_folder)
 def clip_phi(phi_values):
     return phi_values - 2 * np.pi * np.floor((phi_values + np.pi) / (2 * np.pi))
 
+
+
+
+event_gnn_n_cl =  load_object(metrics_folder+'tot_n_gnn.pkl')
+event_tc_n_cl =  load_object(metrics_folder+'tot_n_tc.pkl')
+
+print("=======================================================================================================")
+print(f"Plotting number of clusters, saving to {save_folder}")
+print("=======================================================================================================\n")
+
+f,ax0 = plt.subplots(1,1,figsize=(9, 6))
+freq_pred, bins, _   = ax0.hist(event_gnn_n_cl,bins=50,density=True,histtype='step',color='dodgerblue',lw=1.5,label='DMoN')
+freq_tar, bins, _    = ax0.hist(event_tc_n_cl,bins=50,density=True,histtype='step',color='green',lw=1.5,label='TC')
+ax0.legend(loc='lower left',bbox_to_anchor=(0.75, 0.8),fontsize="medium")
+hep.atlas.label(ax=ax0,label='Work in Progress',data=False,lumi=None,loc=1)
+ax0.set(yscale='log',xlabel='Numb. clusters per event')
+f.savefig(save_folder + f'/n_cl_total.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
+plt.close()
+
+f,ax0 = plt.subplots(1,1,figsize=(9, 6))
+freq_pred, bins, _   = ax0.hist(event_gnn_n_cl,bins=50,histtype='step',color='dodgerblue',lw=1.5,label='DMoN')
+freq_tar, bins, _    = ax0.hist(event_tc_n_cl,bins=50,histtype='step',color='green',lw=1.5,label='TC')
+ax0.legend(loc='lower left',bbox_to_anchor=(0.75, 0.8),fontsize="medium")
+hep.atlas.label(ax=ax0,label='Work in Progress',data=False,lumi=None,loc=1)
+ax0.set(yscale='log',xlabel='Numb. clusters per event')
+f.savefig(save_folder + f'/n_cl_total2.{image_format}',dpi=400,format=image_format,bbox_inches="tight")
+plt.close()
+
+print("=======================================================================================================")
+print(f"Loading metrics list...")
+print("=======================================================================================================\n")
 
 # gnn clusters
 total_gnn_cl_pt = np.concatenate(load_object(metrics_folder+'tot_gnn_pt.pkl'))/1000
@@ -77,8 +109,7 @@ total_tru_jet_phi =  clip_phi(np.concatenate(load_object(metrics_folder+'tot_tru
 event_tru_jet_met = load_object(metrics_folder+'tot_tru_jet_met.pkl')
 event_tru_jet_ht = load_object(metrics_folder+'tot_tru_jet_ht.pkl')
 
-event_gnn_n_cl =  load_object(metrics_folder+'tot_n_gnn.pkl')
-event_tc_n_cl =  load_object(metrics_folder+'tot_n_tc.pkl')
+
 
 print(max(total_tru_jet_eta))
 print(max(total_gnn_jet_cl_eta))

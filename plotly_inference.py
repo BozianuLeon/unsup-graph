@@ -19,6 +19,7 @@ import data
 parser = argparse.ArgumentParser()
 parser.add_argument('--root', nargs='?', const='./', default='./', type=str, help='Path to top-level h5 directory',)
 parser.add_argument('--name', type=str, required=True, help='Name of edge building scheme (knn, rad, bucket, custom)')
+parser.add_argument('--feat', type=str, nargs='?', const="XYZ", default="XYZ", help='Which geometrical columns are in the feature matrix (XYZ or REP)')
 parser.add_argument('-idx', nargs='?', const=0, default=0, type=int, help='Event number to examine')
 parser.add_argument('-k', nargs='?', const=None, default=None, type=int, help='K-nearest neighbours value to be used only in knn graph')
 parser.add_argument('-r', nargs='?', const=None, default=None, type=int, help='Radius value to be used only in radial graph')
@@ -45,6 +46,7 @@ if __name__=="__main__":
         "val_frac"   : 0.25,
         "test_frac"  : 0.15,
         "builder"    : args.name,
+        "features"   : args.feat,
         "graph_dir"  : args.graph_dir,
         "k"          : args.k,
         "r"          : args.r,
@@ -62,10 +64,13 @@ if __name__=="__main__":
     ##########################################################################################################################################################################################
 
     # instantiate model
-    model = models.Net(6, config["n_clus"]).to(config["device"])
+    feat_dict = {"XYZ": 5, "REP": 5, "REPP": 6, "GEO": 3, "CYL": 3}
+    # model = models.Net(feat_dict[config["features"]], config["n_clus"]).to(config["device"])
+    model = models.CustomNet(feat_dict[config["features"]], config["n_clus"]).to(config["device"])
     total_params = sum(p.numel() for p in model.parameters())
     print(f'DMoN (single conv layer) \t{total_params:,} total parameters.\n')
-    model_name = "DMoN_calo_{}_{}c_{}e".format(config["builder"], config["n_clus"], config["n_epochs"])
+    # model_name = "DMoN_calo{}_{}_{}c_{}e".format(config["features"],config["builder"],config["n_clus"],config["n_epochs"])
+    model_name = "customDMoN_calo{}_{}_{}c_{}e".format(config["features"],config["builder"],config["n_clus"],config["n_epochs"])
     model_save_path = args.model_dir + f"/{model_name}.pth"
     print(f'Model saved here: {model_save_path}')
     model.load_state_dict(torch.load(model_save_path, weights_only=True, map_location=torch.device(config["device"])))
@@ -79,7 +84,7 @@ if __name__=="__main__":
 
     ##########################################################################################################################################################################################
     if not os.path.exists(args.output_dir + model_name): os.makedirs(args.output_dir + model_name)
-
+    print(f"Saving html images here: {args.output_dir + model_name}")
 
     # make input graph with edges from sparse adj matrix
 
