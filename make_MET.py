@@ -192,12 +192,13 @@ for event_i in range(len(event_gnn_cl_pt)):
     E_x_miss = - np.sum(akt_jet_E_x_miss)
     E_y_miss = - np.sum(akt_jet_E_y_miss)
     E_T_miss_akt_jet = np.sqrt(E_x_miss**2 + E_y_miss**2)
-    tot_tru_jet_met.append(E_T_miss_akt_jet)
-    tot_tru_jet_ht.append(np.sum(akt_jet_H_T))
+    tot_akt_jet_met.append(E_T_miss_akt_jet)
+    tot_akt_jet_ht.append(np.sum(akt_jet_H_T))
 
     # truth jets
     tru_jet_E_x_miss, tru_jet_E_y_miss, tru_jet_H_T = np.zeros(len(event_tru_jet_pt[event_i])), np.zeros(len(event_tru_jet_pt[event_i])), np.zeros(len(event_tru_jet_pt[event_i]))
     for jet_idx in range(len(event_tru_jet_pt[event_i])):
+        jet_idx=3
         jet_eta = event_tru_jet_eta[event_i][jet_idx]
         jet_phi = event_tru_jet_phi[event_i][jet_idx]
         jet_e   = event_tru_jet_e[event_i][jet_idx] / 1000 # GeV
