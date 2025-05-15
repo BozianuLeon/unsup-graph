@@ -52,13 +52,12 @@ class CustomDMoNPooling(torch.nn.Module):
 
         s = self.mlp(x)
         s = F.dropout(s, self.dropout, training=self.training)
-        s = torch.softmax(s, dim=-1) # cluster assignments
+        s = torch.softmax(s, dim=-1) # cluster assignments, called C in paper
 
         (batch_size, num_nodes, _), C = x.size(), s.size(-1)
 
         if mask is None:
-            mask = torch.ones(batch_size, num_nodes, dtype=torch.bool,
-                              device=x.device)
+            mask = torch.ones(batch_size, num_nodes, dtype=torch.bool, device=x.device)
 
         mask = mask.view(batch_size, num_nodes, 1).to(x.dtype)
         x, s = x * mask, s * mask
@@ -72,7 +71,8 @@ class CustomDMoNPooling(torch.nn.Module):
         _, bottomk_cols = torch.topk(col_sum,k=C-target_num_clusters,dim=2,largest=False) # B x 1 x topk
         batch_idx = torch.arange(batch_size).view(batch_size,1,1) # B x 1 x 1
         s[batch_idx,:,bottomk_cols] = 0 # B x N x C
-        # TODO: check if multiplying by a mask might be faster i.e zero_mask[batch_idx,:,bottomk_cols] = , x = x * zero_mask
+        # TODO: check if multiplying by a mask might be faster 
+        # i.e zero_mask[batch_idx,:,bottomk_cols] = , x = x * zero_mask
 
 
         out = F.selu(torch.matmul(s.transpose(1, 2), x)) # features pooled
@@ -80,7 +80,7 @@ class CustomDMoNPooling(torch.nn.Module):
 
         #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-        # Spectral loss:
+        # Spectral loss: (modularity loss)
         degrees = torch.einsum('ijk->ij', adj)  # B X N
         degrees = degrees.unsqueeze(-1) * mask  # B x N x 1
         degrees_t = degrees.transpose(1, 2)  # B x 1 x N
@@ -212,7 +212,7 @@ class CustomNet(torch.nn.Module):
         adj = torch_geometric.utils.to_dense_adj(edge_index, batch, max_num_nodes=x.shape[1])
         # print(f"5adj. {adj.shape}")
 
-        target_num_clusters = torch.clamp(n,min=2,max=self.out_channels-1) # number of 5 sigma cells
+        target_num_clusters = torch.clamp(torch.tensor(n),min=2,max=self.out_channels-1) # number of 5 sigma cells
         s, x, adj, sp1, o1, c1 = self.pool1(x, adj, int(target_num_clusters), mask)
         # print(f"6.x {x.shape}")
         # print(f"7.s {s.shape}")
