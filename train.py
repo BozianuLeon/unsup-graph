@@ -157,7 +157,8 @@ if __name__=='__main__':
     # inference from a single forward pass
     model.eval()
     torch.inference_mode()
-    pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
+    # pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
+    pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.n,eval_graph.batch)
     eval_graph = test_data[0].to("cpu") 
 
     # force each node to its most likely cluster, no soft assignment

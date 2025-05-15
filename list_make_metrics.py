@@ -163,7 +163,7 @@ if __name__=="__main__":
         for step, data in enumerate(test_loader):
             print(step)
             data = data.to(config["device"])
-            pred, tot_loss, clus_ass = model(data.x,data.edge_index,data.batch)
+            pred, tot_loss, clus_ass = model(data.x,data.edge_index,data.n,data.batch)
             node_features = torch_geometric.utils.unbatch(data.x,data.batch)
             cell_ids = torch_geometric.utils.unbatch(data.y,data.batch)
             

@@ -75,7 +75,7 @@ if __name__=="__main__":
     print(f'Model saved here: {model_save_path}')
     model.load_state_dict(torch.load(model_save_path, weights_only=True, map_location=torch.device(config["device"])))
 
-    pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
+    pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.n,eval_graph.batch)
     # send back to cpu for plotting
     eval_graph = eval_graph.to("cpu")
     predicted_classes = clus_ass.squeeze().argmax(dim=1).cpu().numpy()
@@ -105,7 +105,7 @@ if __name__=="__main__":
 
     # Update the layout
     fig.update_layout(
-        title={'text': f'Input (|s| > 2) cell point cloud {args.name} Edges','y':0.95,'x':0.5,'xanchor': 'center','yanchor': 'top'},
+        title={'text': f'Input (|s| > 2) cell point cloud {args.name} Edges, {eval_graph.n} 5sig cells','y':0.95,'x':0.5,'xanchor': 'center','yanchor': 'top'},
         scene=dict(xaxis_title='X',yaxis_title='Y',zaxis_title='Z',aspectmode='data'),
         width=1400,
         height=1000,
