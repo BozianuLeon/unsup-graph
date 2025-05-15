@@ -54,7 +54,7 @@ def get_bucket_edges(cells2sig, mask2sig, neighbours_array, src_neighbours_array
     return torch.tensor(edge_indices)
 
 
-def get_custom_edges(cells, neigh_3x3, src_neigh_3x3, neigh_9x9, src_neigh_9x9):
+def get_custom_edges(cells, neigh_3x3, src_neigh_3x3, neigh_cross, src_neigh_cross, neigh_1x1, src_neigh_1x1):
     '''
     Function to calculate edges between nodes in neighbouring buckets of eta,phi.
     Take all of 2 sigma cells, then connect them to all >3 sigma cells in the
@@ -66,28 +66,32 @@ def get_custom_edges(cells, neigh_3x3, src_neigh_3x3, neigh_9x9, src_neigh_9x9):
             3x3 windows in eta-phi buckets
         src_neigh_3x3: numpy.array, LUT same as neigh_3x3 containing the source
             nodes to match the dest nodes to make edge_indices in sparse tensor format
-        neigh_9x9: numpy.array, LUT calculating fixed cell neighbours based on 
-            9x9 windows in eta-phi buckets
-        src_neigh_9x9: numpy.array, LUT same as neigh_9x9 containing the source
+        neigh_cross: numpy.array, LUT calculating fixed cell neighbours based on 
+            cross-like windows in eta-phi buckets
+        src_neigh_cross: numpy.array, LUT same as neigh_cross containing the source
+            nodes to match the dest nodes to make edge_indices in sparse tensor format
+        neigh_1x1: numpy.array, LUT calculating fixed cell neighbours based on 
+            1x1 windows in eta-phi buckets
+        src_neigh_1x1: numpy.array, LUT same as neigh_1x1 containing the source
             nodes to match the dest nodes to make edge_indices in sparse tensor format
     Outputs:
         edge_indices: torch.tensor, tensor containing sparse adjacency matrix indices for
             cells passing significance threshold, shape [2,num_edges]
     '''
 
-
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     # First, deal with the seed cells:
     mask4sig = abs(cells['cell_E'] / cells['cell_Sigma']) >= 4
     cells4sig = cells[mask4sig]
     cell_ids_4 = np.array(cells4sig['cell_IdCells'].astype(int))
 
-    # get the neighbours from the 9x9 LUT
-    cell_neighb_9x9_4 = neigh_9x9[mask4sig]
-    src_cell_neighb_9x9_4 = src_neigh_9x9[mask4sig]
+    # get the neighbours from the 3x3 LUT
+    cell_neighb_3x3_4 = neigh_3x3[mask4sig]
+    src_cell_neighb_3x3_4 = src_neigh_3x3[mask4sig]
 
     # but not all of the cells that are neighbours exceed 4 sigma. Filter out low sig cells (+ 999 padded values)
-    actual_cell_neighb_4 = np.where(np.isin(cell_neighb_9x9_4,cell_ids_4), cell_neighb_9x9_4, np.nan) # actual cells we can use from cell_neighbours
-    actual_src_cell_neighb_4 = np.where(np.isin(cell_neighb_9x9_4,cell_ids_4), src_cell_neighb_9x9_4, np.nan) 
+    actual_cell_neighb_4 = np.where(np.isin(cell_neighb_3x3_4,cell_ids_4), cell_neighb_3x3_4, np.nan) # actual cells we can use from cell_neighbours
+    actual_src_cell_neighb_4 = np.where(np.isin(cell_neighb_3x3_4,cell_ids_4), src_cell_neighb_3x3_4, np.nan) 
 
     # translate from cell ID to index, used in this event
     neighb_4sig_indices = np.searchsorted(cell_ids_4,actual_cell_neighb_4)
@@ -99,25 +103,50 @@ def get_custom_edges(cells, neigh_3x3, src_neigh_3x3, neigh_9x9, src_neigh_9x9):
     edge_indices_4 = np.stack((dst_node_4_indices,src_node_4_indices),axis=0)
 
     #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-    # Now, deal with 2 sigma cells:
-    # they only connect to >3 sigma cells in a smaller 3x3 window
-    mask2sig = abs(cells['cell_E'] / cells['cell_Sigma']) >= 2
-    cells2sig = cells[mask2sig]
-    mask3sig = abs(cells['cell_E'] / cells['cell_Sigma']) >= 3
+    # Second, the cells with 3 < |significance| < 4
+    # only connect to > 4 sigma cells in "cross-like" window
+    mask3sig = (abs(cells['cell_E'] / cells['cell_Sigma']) >= 3) & (abs(cells['cell_E'] / cells['cell_Sigma']) < 4)
     cells3sig = cells[mask3sig]
 
     # get cell IDs, used to mask the cells we have access to for this event
-    cell_ids_2 = np.array(cells2sig['cell_IdCells'].astype(int))
     cell_ids_3 = np.array(cells3sig['cell_IdCells'].astype(int))
 
-    # get the neighbour arrays for the 2 sigma cells
-    cell_neighb_2 = neigh_3x3[mask2sig]
-    src_cell_neighb_2 = src_neigh_3x3[mask2sig]
+    # get the neighbour arrays for the 3 sigma cells, from the cross-like LUT
+    cell_neighb_3 = neigh_cross[mask3sig]
+    src_cell_neighb_3 = src_neigh_cross[mask3sig]
 
-    # again, not all neighbours pass the 3(!) sigma threshold (+ remove 999 pad values)
-    actual_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_3), cell_neighb_2, np.nan) # actual cells we can use from cell_neighbours
-    actual_src_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_3), src_cell_neighb_2, np.nan) 
+    # again, not all neighbours pass the 4(!) sigma threshold (+ remove 999 pad values)
+    # importantly, we have ALL possible cells in the LUT, but we only want those above 4sigma (some will be even below 2sigma!) 
+    actual_cell_neighb_3 = np.where(np.isin(cell_neighb_3,cell_ids_4), cell_neighb_3, np.nan) # actual cells we can use from cell_neighbours
+    actual_src_cell_neighb_3 = np.where(np.isin(cell_neighb_3,cell_ids_4), src_cell_neighb_3, np.nan) 
+
+    # find the cellID indices from cell_ids_3, what index are they in this event?
+    # this transforms from cells3sig indices to cell index per event
+    neighb_3sig_indices = np.searchsorted(cell_ids_3,actual_cell_neighb_3)
+    neighb_src_3sig_indices = np.searchsorted(cell_ids_3,actual_src_cell_neighb_3)
+
+    # use the nan array to again extract just the valid node indices we want
+    dst_node_3_indices = neighb_3sig_indices[~np.isnan(actual_cell_neighb_3)]
+    src_node_3_indices = neighb_src_3sig_indices[~np.isnan(actual_src_cell_neighb_3)]
+    edge_indices_3 = np.stack((dst_node_3_indices,src_node_3_indices),axis=0)
+
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # third, the cells with 2 < |significance| < 3
+    # only connect to > 4 sigma cells in a single 1x1 bin
+    # go through same process as above
+    mask2sig = (abs(cells['cell_E'] / cells['cell_Sigma']) >= 2) & (abs(cells['cell_E'] / cells['cell_Sigma']) < 3)
+    cells2sig = cells[mask2sig]
+
+    # get cell IDs, used to mask the cells we have access to for this event
+    cell_ids_2 = np.array(cells2sig['cell_IdCells'].astype(int))
+
+    # get the neighbour arrays for the 2 sigma cells
+    cell_neighb_2 = neigh_1x1[mask2sig]
+    src_cell_neighb_2 = src_neigh_1x1[mask2sig]
+
+    # again, not all neighbours pass the 4(!) sigma threshold (+ remove 999 pad values)
+    actual_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_4), cell_neighb_2, np.nan) # actual cells we can use from cell_neighbours
+    actual_src_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_4), src_cell_neighb_2, np.nan) 
 
     # find the cellID indices from cell_ids_2, what index are they in this event?
     neighb_2sig_indices = np.searchsorted(cell_ids_2,actual_cell_neighb_2)
@@ -128,9 +157,43 @@ def get_custom_edges(cells, neigh_3x3, src_neigh_3x3, neigh_9x9, src_neigh_9x9):
     src_node_2_indices = neighb_src_2sig_indices[~np.isnan(actual_src_cell_neighb_2)]
 
     edge_indices_2 = np.stack((dst_node_2_indices,src_node_2_indices),axis=0)
-    print(edge_indices_4.shape,edge_indices_2.shape)
+    # print('====')
+    # print(cells4sig.shape,cells3sig.shape,cells2sig.shape)
+    # print(edge_indices_4.shape,edge_indices_3.shape,edge_indices_2.shape)  
+    # print(np.hstack((edge_indices_4, edge_indices_3, edge_indices_2)).shape)
 
-    return torch.tensor(np.hstack((edge_indices_4, edge_indices_2)))
+    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    # Now, deal with 2 sigma cells:
+    # they only connect to >3 sigma cells in a smaller 3x3 window
+    # mask2sig = abs(cells['cell_E'] / cells['cell_Sigma']) >= 2
+    # cells2sig = cells[mask2sig]
+    # mask3sig = abs(cells['cell_E'] / cells['cell_Sigma']) >= 3
+    # cells3sig = cells[mask3sig]
+
+    # # get cell IDs, used to mask the cells we have access to for this event
+    # cell_ids_2 = np.array(cells2sig['cell_IdCells'].astype(int))
+    # cell_ids_3 = np.array(cells3sig['cell_IdCells'].astype(int))
+
+    # # get the neighbour arrays for the 2 sigma cells
+    # cell_neighb_2 = neigh_3x3[mask2sig]
+    # src_cell_neighb_2 = src_neigh_3x3[mask2sig]
+
+    # # again, not all neighbours pass the 3(!) sigma threshold (+ remove 999 pad values)
+    # actual_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_3), cell_neighb_2, np.nan) # actual cells we can use from cell_neighbours
+    # actual_src_cell_neighb_2 = np.where(np.isin(cell_neighb_2,cell_ids_3), src_cell_neighb_2, np.nan) 
+
+    # # find the cellID indices from cell_ids_2, what index are they in this event?
+    # neighb_2sig_indices = np.searchsorted(cell_ids_2,actual_cell_neighb_2)
+    # neighb_src_2sig_indices = np.searchsorted(cell_ids_2,actual_src_cell_neighb_2)
+
+    # # use the nan array to again extract just the valid node indices we want
+    # dst_node_2_indices = neighb_2sig_indices[~np.isnan(actual_cell_neighb_2)]
+    # src_node_2_indices = neighb_src_2sig_indices[~np.isnan(actual_src_cell_neighb_2)]
+
+    # edge_indices_2 = np.stack((dst_node_2_indices,src_node_2_indices),axis=0)
+    # print(edge_indices_4.shape,edge_indices_2.shape)
+
+    return torch.tensor(np.hstack((edge_indices_4, edge_indices_3, edge_indices_2)))
 
 
 
@@ -161,11 +224,15 @@ class EdgeBuilder(torch.nn.Module):
 
         elif self.name=="custom":
             self.builder = get_custom_edges
-            self.args = {"neighbours_array"     : np.load(self.graph_dir+'/pyg/cell_neighbours.npy'),
-                         "src_neighbours_array" : np.load(self.graph_dir+'/pyg/src_cell_neighbours.npy')}
-
+            self.args = {"neigh_3x3"       : np.load(self.graph_dir+'/pyg/cell_neighbours.npy'),
+                         "src_neigh_3x3"   : np.load(self.graph_dir+'/pyg/src_cell_neighbours.npy'),
+                         "neigh_cross"     : np.load(self.graph_dir+'/pyg/cell_cross_neighbours.npy'),
+                         "src_neigh_cross" : np.load(self.graph_dir+'/pyg/src_cell_cross_neighbours.npy'),
+                         "neigh_1x1"       : np.load(self.graph_dir+'/pyg/cell_1x1_neighbours.npy'),
+                         "src_neigh_1x1"   : np.load(self.graph_dir+'/pyg/src_cell_1x1_neighbours.npy'),
+                         }
         else:
-            print("Please specify a valid builder (knn, rad, bucket) with sufficient arguments")
+            print("Please specify a valid builder (knn, rad, bucket, custom) with sufficient arguments")
 
     
     def forward(self, event_no, h5group_cells):
@@ -400,6 +467,7 @@ if __name__ == "__main__":
     event_no = 2
     event0 = mydata[event_no]
     print(event0)
+    print(event0.n)
     event0_cl = mydata.get_clusters(event_no)
     print(event0_cl.keys())
 
