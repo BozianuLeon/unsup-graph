@@ -305,7 +305,7 @@ class CaloDataset(torch_geometric.data.Dataset):
             (default: :obj:`None`)
     """
 
-    def __init__(self, root, name="knn", feat="XYZ", k=None, rad=None, graph_dir=None, transform=None):
+    def __init__(self, root, name="knn", feat="XYZ", k=None, rad=None, graph_dir=None, transform=None, test=False):
         self.name = name
         self.feat = feat
         self.root = root
@@ -315,6 +315,7 @@ class CaloDataset(torch_geometric.data.Dataset):
         self.builder = EdgeBuilder(name=self.name,feat=self.feat,k=self.k,rad=self.rad,graph_dir=self.graph_dir)
         self.transform = transform if transform!=None else torch_geometric.transforms.RemoveDuplicatedEdges() # https://github.com/pyg-team/pytorch_geometric/discussions/7427
         # TODO: Look into  -  torch_geometric.transforms.RemoveIsolatedNodes, 
+        self.test = test
         print('1.',self.__dict__)
         print('2. root dir',self.root, ' raw dir', self.raw_dir)
         super().__init__(self.root, self.transform)
@@ -325,9 +326,11 @@ class CaloDataset(torch_geometric.data.Dataset):
         '''
         List of the h5 files to be opened during processing
         '''
-        # file_ids = ["117", "116", "115", "114", "113"]#, "112", "111"]
-        # return [f"user.lbozianu.43589851._000{file_id}.calocellD3PD_mc21_14TeV_JZ4.r14365.h5" for file_id in file_ids]
-        return ["user.lbozianu.43589851._000117.calocellD3PD_mc21_14TeV_JZ4.r14365.h5"]
+        if not self.test:
+            file_ids = ["01", "02", "03"] #, "04", "05", "06", "07"]
+        else:
+            file_ids = ["10"]
+        return [f"user.lbozianu.44670103._0000{file_id}.calocellD3PD_mc21_14TeV_ttbar.r15583.h5" for file_id in file_ids]
 
     @property
     def raw_dir(self):
@@ -335,17 +338,8 @@ class CaloDataset(torch_geometric.data.Dataset):
         Path to the raw cell data folder containing h5 files
         Later on, raw_paths = raw_dir + / + raw_file_names
         '''
-        return osp.join(self.root, 'cells/JZ4/user.lbozianu')
-
-    @property
-    def raw_cl_file_names(self):
-        '''
-        List of the CLUSTER h5 files to be opened during processing,
-        Approx. ~2200 events per file
-        '''
-        # file_ids = ["117", "116", "115", "114", "113"]#, "112", "111"]
-        # return [f"user.lbozianu.43589851._000{file_id}.topoClD3PD_mc21_14TeV_JZ4.r14365.h5" for file_id in file_ids]
-        return [f"user.lbozianu.43589851._000117.topoClD3PD_mc21_14TeV_JZ4.r14365.h5"]
+        return osp.join(self.root, 'cells/ttbar/user.lbozianu.mc21_14TeV.601229.PhPy8EG_A14_ttbar_hdamp258p75_SingleLep.h5_calocellD3PD_mc21_14TeV_ttbar.r15583.h5')
+        # return osp.join(self.root, 'cells/JZ4/user.lbozianu')
 
     @property
     def processed_file_names(self):
@@ -363,12 +357,20 @@ class CaloDataset(torch_geometric.data.Dataset):
         Later on, we save event graphs to processed_dir + processed_file + *.pt
         Checks made on this dir, if exists and full no processing
         '''
-        file_structure = {
-            "custom" :   f"/custom/pyg2sig{self.feat}",
-            "bucket" :   f"/bucket/pyg2sig{self.feat}",
-            "knn"    :   f"/knn/{self.k}/pyg2sig{self.feat}",
-            "rad"    :   f"/rad/{self.rad}/pyg2sig{self.feat}" 
-        }
+        if not self.test:
+            file_structure = {
+                "custom" :   f"/custom/ttbar/pyg2sig{self.feat}",
+                "bucket" :   f"/bucket/ttbar/pyg2sig{self.feat}",
+                "knn"    :   f"/knn/ttbar/{self.k}/pyg2sig{self.feat}",
+                "rad"    :   f"/rad/ttbar/{self.rad}/pyg2sig{self.feat}" 
+            }
+        else:
+            file_structure = {
+                "custom" :   f"/custom/ttbar_test/pyg2sig{self.feat}",
+                "bucket" :   f"/bucket/ttbar_test/pyg2sig{self.feat}",
+                "knn"    :   f"/knn/ttbar_test/{self.k}/pyg2sig{self.feat}",
+                "rad"    :   f"/rad/ttbar_test/{self.rad}/pyg2sig{self.feat}" 
+            }
 
         return self.graph_dir + file_structure[self.name]
     
@@ -412,39 +414,6 @@ class CaloDataset(torch_geometric.data.Dataset):
     def get(self, idx):
         data = torch.load(osp.join(self.processed_dir, f'event_graph_{idx}.pt'), weights_only=False)
         return data
-    
-    def get_clusters(self, idx):
-        # idx tells us which event from all h5 files,
-        # need to find the file first, then get the event no
-
-        for j in range(len(self.raw_paths)):
-            file = self.raw_paths[j]
-            f1 = h5py.File(file,"r")
-            n_events_in_file = len(f1["caloCells"]["2d"])
-            if idx < n_events_in_file:
-                cl_file = osp.join(self.root, 'clusters/JZ4/user.lbozianu', self.raw_cl_file_names[j])
-                f2 = h5py.File(cl_file,"r")
-                cl_data = f2["caloCells"] 
-                event_data   = cl_data["1d"][idx]
-                cluster_data = cl_data["2d"][idx]
-
-                cl_pts = cluster_data['cl_pt'][np.isfinite(cluster_data['cl_pt'])] # [~np.isnan(cl_pts)]
-                cl_E_em  = cluster_data['cl_E_em'][np.isfinite(cluster_data['cl_E_em'])]
-                cl_E_had = cluster_data['cl_E_had'][np.isfinite(cluster_data['cl_E_had'])]
-                cl_cell_n = cluster_data['cl_cell_n'][np.isfinite(cluster_data['cl_cell_n'])]
-                cl_cellmaxfrac = cluster_data['cl_cellmaxfrac'][np.isfinite(cluster_data['cl_cellmaxfrac'])]
-                # cl_etas = cluster_data['cl_eta'][np.isfinite(cluster_data['cl_eta'])] # no eta/phi YET
-                topocluster_dict = {
-                    "cl_pt":          cl_pts,
-                    "cl_E" :          cl_E_em+cl_E_had,
-                    "cl_cell_n":      cl_cell_n,
-                    "cl_cellmaxfrac": cl_cellmaxfrac,
-                    "cl_n":           event_data["cl_n"],
-                }
-                f2.close()
-                return topocluster_dict
-            else:
-                idx = idx - n_events_in_file
 
 
 
@@ -454,13 +423,14 @@ if __name__ == "__main__":
     parser.add_argument('--root', type=str, required=True, help='Path to top-level h5 directory',)
     parser.add_argument('--name', type=str, required=True, help='Name of edge building scheme (knn, rad, bucket, custom)')
     parser.add_argument('--feat', type=str, nargs='?', const="XYZ", default="XYZ", help='Which geometrical columns are in the feature matrix (XYZ or REP)')
+    parser.add_argument('--test', action="store_true", help='Bool for train or test set')
     parser.add_argument('-k', nargs='?', const=None, default=None, type=int, help='K-nearest neighbours value to be used only in knn graph')
     parser.add_argument('-r', nargs='?', const=None, default=None, type=int, help='Radius value to be used only in radial graph')
     parser.add_argument('-o','--out',nargs='?', const='./cache/', default='./cache/', type=str, help='Path to processed folder containing .pt graphs',)
     args = parser.parse_args()
-
+    print("\t\t",args.test)
     # instantiate a dataset, if not already present will be created via process() call
-    mydata = CaloDataset(root=args.root, name=args.name, feat=args.feat, k=args.k, rad=args.r, graph_dir=args.out)
+    mydata = CaloDataset(root=args.root, name=args.name, feat=args.feat, k=args.k, rad=args.r, graph_dir=args.out, test=args.test)
     print("len",mydata.len(),len(mydata))
     print()
 
@@ -468,8 +438,8 @@ if __name__ == "__main__":
     event0 = mydata[event_no]
     print(event0)
     print(event0.n)
-    event0_cl = mydata.get_clusters(event_no)
-    print(event0_cl.keys())
+    # event0_cl = mydata.get_clusters(event_no)
+    # print(event0_cl.keys())
 
 
     save_loc = osp.join(args.out,osp.pardir) + "/plots/inputs/"
