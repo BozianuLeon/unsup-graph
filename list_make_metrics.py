@@ -125,14 +125,10 @@ if __name__=="__main__":
     j_data = h5py.File(path_to_jet_h5_file,"r")
     jet_data = j_data["caloCells"]["2d"]
 
-    train_data = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
-    valid_data = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
-    test_data  = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
-    print('\ttrain / val / test size : ',len(train_data),'/',len(valid_data),'/',len(test_data),'\n')
 
-    train_loader = DataLoader(train_data, batch_size=config["BS"], num_workers=config["NW"])
-    val_loader   = DataLoader(valid_data, batch_size=config["BS"], num_workers=config["NW"])
+    test_data  = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"],test=True)
     test_loader  = DataLoader(test_data, batch_size=config["BS"], num_workers=config["NW"])
+    print('\ttest size : ',len(test_data),'\n')
 
     # instantiate model
     feat_dict = {"XYZ": 5, "REP": 5, "REPP": 6, "GEO": 3, "CYL": 3}
@@ -160,10 +156,12 @@ if __name__=="__main__":
         tot_cl_pt,tot_cl_eta,tot_cl_phi,tot_cl_e,tot_cl_n_cell = [],[],[],[],[]
         tot_akt_pt,tot_akt_eta,tot_akt_phi,tot_akt_m = [],[],[],[]
         tot_tru_pt,tot_tru_eta,tot_tru_phi,tot_tru_e,tot_tru_m = [],[],[],[],[]
+        tot_cell_met = []
         for step, data in enumerate(test_loader):
             print(step)
             data = data.to(config["device"])
-            pred, tot_loss, clus_ass = model(data.x,data.edge_index,data.n,data.batch)
+            # pred, tot_loss, clus_ass = model(data.x,data.edge_index,data.n,data.batch)
+            pred, spectral_loss, ortho_loss, cluster_loss, clus_ass = model(data.x,data.edge_index,data.n,data.batch)
             node_features = torch_geometric.utils.unbatch(data.x,data.batch)
             cell_ids = torch_geometric.utils.unbatch(data.y,data.batch)
             
@@ -272,6 +270,20 @@ if __name__=="__main__":
                 tot_tru_e.append(tru_e)
                 tot_tru_m.append(tru_m)
 
+                # get cell MET
+                #y_i == ID, eta, phi, E
+                cells_E = y_i[:,3]
+                cells_eta = y_i[:,1]
+                cells_phi = y_i[:,2]
+                cells_theta = 2*np.arctan(np.exp(-cells_eta))
+                
+                E_x = cells_E * np.sin(cells_theta) * np.cos(cells_phi) # hadamard product
+                E_x_miss = np.sum(E_x)
+                E_y = cells_E * np.sin(cells_theta) * np.sin(cells_phi) # hadamard product
+                E_y_miss = np.sum(E_y)
+                E_T_miss = np.sqrt( (E_x_miss**2) + (E_y_miss**2))
+                tot_cell_met.append(E_T_miss)
+
         end = time.perf_counter()      
         print(f"Time taken for entire test set: {(end-beginning)/60:.3f} mins, (or {(end-beginning):.3f}s)")
 
@@ -304,3 +316,5 @@ if __name__=="__main__":
         # number of clusters per event
         save_object(tot_n_gnn, save_loc+'tot_n_gnn.pkl')
         save_object(tot_n_tc, save_loc+'tot_n_tc.pkl')
+        # cell met per event
+        save_object(tot_cell_met, save_loc+'tot_cell_met.pkl')
