@@ -76,7 +76,7 @@ class CustomDMoNPooling(torch.nn.Module):
 
 
         out = F.selu(torch.matmul(s.transpose(1, 2), x)) # features pooled
-        out_adj = torch.matmul(torch.matmul(s.transpose(1, 2), adj), s)
+        out_adj = torch.matmul(torch.matmul(s.transpose(1, 2), adj), s) # C^T A C
 
         #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -96,7 +96,7 @@ class CustomDMoNPooling(torch.nn.Module):
         spectral_loss = -_rank3_trace(decompose) / 2 / m
         spectral_loss = spectral_loss.mean()
 
-        # Orthogonality regularization:
+        # Orthogonality regularization (see section 4.2 in paper):
         ss = torch.matmul(s.transpose(1, 2), s)
         i_s = torch.eye(C).type_as(ss)
         ortho_loss = torch.norm(
@@ -110,6 +110,20 @@ class CustomDMoNPooling(torch.nn.Module):
         cluster_loss = cluster_loss / mask.sum(dim=1) * torch.norm(i_s) - 1
         cluster_loss = cluster_loss.mean()
 
+        # Cluster multiplicity loss:
+        # force each node to its most likely cluster, no soft assignment
+        predicted_classes = s.squeeze().argmax(dim=1)
+        number_pred_classes = torch.unique(predicted_classes).shape[0]
+        number_pred_classes = torch.tensor(number_pred_classes,dtype=torch.float32,device=s.device)
+        target_num_clusters = torch.tensor(target_num_clusters,dtype=torch.float32,device=s.device)
+        # add loss term such that if |number_pred_classes - target_num_clusters| / target_num_clusters > 0.2
+        # then a loss term is proportional to the difference. If within 20% no additional loss
+        z = torch.abs(number_pred_classes - target_num_clusters) / target_num_clusters
+        print(number_pred_classes, "used, number of 5sig cells is", target_num_clusters, ". z is ",z, "Huber loss would be ", F.huber_loss(number_pred_classes,target_num_clusters,reduction='none',delta=25).item())
+        mult_loss = torch.where(z < 0.2, 0, F.huber_loss(number_pred_classes,target_num_clusters,reduction='none',delta=25))
+
+        #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
         # Fix and normalize coarsened adjacency matrix:
         ind = torch.arange(C, device=out_adj.device)
         out_adj[:, ind, ind] = 0
@@ -117,7 +131,7 @@ class CustomDMoNPooling(torch.nn.Module):
         d = torch.sqrt(d)[:, None] + EPS
         out_adj = (out_adj / d) / d.transpose(1, 2)
 
-        return s, out, out_adj, spectral_loss, ortho_loss, cluster_loss
+        return s, out, out_adj, spectral_loss, ortho_loss, cluster_loss, mult_loss
 
 
 
@@ -212,13 +226,14 @@ class CustomNet(torch.nn.Module):
         adj = torch_geometric.utils.to_dense_adj(edge_index, batch, max_num_nodes=x.shape[1])
         # print(f"5adj. {adj.shape}")
 
-        target_num_clusters = torch.clamp(torch.tensor(n),min=2,max=self.out_channels-1) # number of 5 sigma cells
-        s, x, adj, sp1, o1, c1 = self.pool1(x, adj, int(target_num_clusters), mask)
+        target_num_clusters = torch.clamp(n,min=2,max=self.out_channels-1) # number of 5 sigma cells
+        s, x, adj, sp1, o1, c1, m1 = self.pool1(x, adj, int(target_num_clusters), mask)
         # print(f"6.x {x.shape}")
         # print(f"7.s {s.shape}")
         # print(f"8.loss {sp1:.7f}, {o1:.7f}, {c1:.7f}")
 
-        return F.log_softmax(x, dim=-1), sp1+o1+c1, s
+        # return F.log_softmax(x, dim=-1), sp1+o1+c1, s
+        return F.log_softmax(x, dim=-1), sp1,o1,c1,m1, s
 
 
 

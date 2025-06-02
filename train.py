@@ -41,7 +41,7 @@ def train(train_loader, device):
         out, loss, _ = model(data.x, data.edge_index, data.batch)
         # loss += + F.nll_loss(out, data.y.view(-1)) # only relevant if we have labels
         loss.backward()
-        tot_loss += float(loss) * data.x.size(0) # mutliply by batch size?
+        tot_loss += float(loss) * data.x.size(0) # mutliply by batch size
         optimizer.step()
 
     return tot_loss / len(train_loader.dataset) 
@@ -49,15 +49,26 @@ def train(train_loader, device):
 def customtrain(train_loader, device):
     model.train()
     tot_loss = 0
+    tot_sp1_loss = 0
+    tot_o1_loss = 0
+    tot_c1_loss = 0
+    tot_m1_loss = 0
 
     for data in train_loader:
         data = data.to(device)
         optimizer.zero_grad()
-        out, loss, _ = model(data.x, data.edge_index, data.n, data.batch)
+        out, spectral_loss, ortho_loss, cluster_loss, mult_loss, _ = model(data.x, data.edge_index, data.n, data.batch)
+        # print(f"\tsp1: {spectral_loss:.6f}, o1: {ortho_loss:.6f}, c1: {cluster_loss:.3f}")
+        loss = spectral_loss + ortho_loss + cluster_loss + mult_loss
         # potentially add cos/sin weighting to the terms in the loss function
         loss.backward()
         tot_loss += float(loss) * data.x.size(0) # mutliply by batch size? consider changing
+        tot_sp1_loss += float(spectral_loss) * data.x.size(0) # mutliply by batch size? consider changing
+        tot_o1_loss += float(ortho_loss) * data.x.size(0) # mutliply by batch size? consider changing
+        tot_c1_loss += float(cluster_loss) * data.x.size(0) # mutliply by batch size? consider changing
+        tot_m1_loss += float(mult_loss) * data.x.size(0) # mutliply by batch size? consider changing
         optimizer.step()
+    print(f"Train loss: {tot_loss:.3f}, breakdown: sp1 {tot_sp1_loss:.6f}, o1 {tot_o1_loss:.6f}, c1 {tot_c1_loss:.6f}, m1 {tot_m1_loss:.4f}")
 
     return tot_loss / len(train_loader.dataset) 
 
@@ -83,7 +94,8 @@ def customtest(loader, device):
 
     for data in loader:
         data = data.to(device)
-        pred, loss, _ = model(data.x, data.edge_index, data.n, data.batch)
+        pred, spectral_loss, ortho_loss, cluster_loss, mult_loss, _ = model(data.x, data.edge_index, data.n, data.batch)
+        loss = spectral_loss + ortho_loss + cluster_loss + mult_loss
         tot_loss += float(loss) * data.x.size(0) 
 
     return tot_loss / len(loader.dataset) 
@@ -110,7 +122,7 @@ if __name__=='__main__':
         "n_epochs"   : int(args.epochs),
     }
     torch.manual_seed(config["seed"])
-    torch.multiprocessing.set_start_method('spawn') #https://discuss.pytorch.org/t/runtimeerror-cannot-re-initialize-cuda-in-forked-subprocess-to-use-cuda-with-multiprocessing-you-must-use-the-spawn-start-method/14083/3
+    # torch.multiprocessing.set_start_method('spawn') #https://discuss.pytorch.org/t/runtimeerror-cannot-re-initialize-cuda-in-forked-subprocess-to-use-cuda-with-multiprocessing-you-must-use-the-spawn-start-method/14083/3
 
     # memory management https://pytorch.org/docs/stable/notes/cuda.html#memory-management
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
@@ -118,7 +130,7 @@ if __name__=='__main__':
     # get dataset
     train_data = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
     valid_data = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
-    test_data  = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"])
+    test_data  = data.CaloDataset(root=args.root, name=config["builder"], feat=config["features"], k=config["k"], rad=config["r"], graph_dir=config["graph_dir"], test=True)
     print('\ttrain / val / test size : ',len(train_data),'/',len(valid_data),'/',len(test_data),'\n')
 
     train_loader = DataLoader(train_data, batch_size=config["BS"], num_workers=config["NW"],shuffle=True)
@@ -158,7 +170,7 @@ if __name__=='__main__':
     model.eval()
     torch.inference_mode()
     # pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.batch)
-    pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,eval_graph.n,eval_graph.batch)
+    pred, tot_loss, clus_ass = model(eval_graph.x,eval_graph.edge_index,torch.tensor(eval_graph.n),eval_graph.batch)
     eval_graph = test_data[0].to("cpu") 
 
     # force each node to its most likely cluster, no soft assignment
